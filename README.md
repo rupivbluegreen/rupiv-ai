@@ -1,10 +1,10 @@
 <p align="center">
   <h1 align="center">Rupiv.ai</h1>
   <p align="center">
-    <strong>Outcome-based billing infrastructure for AI companies selling into Europe.</strong>
+    <strong>The next-gen agentic billing platform.</strong>
   </p>
   <p align="center">
-    EU VAT &middot; IFRS 15 &middot; GDPR &middot; Agent-native &middot; Developer-first
+    Outcome-based pricing &middot; AI-native agents &middot; Quote-to-cash &middot; Developer-first
   </p>
 </p>
 
@@ -21,13 +21,13 @@
 
 ## The Problem
 
-AI agents are replacing human work. Per-seat billing is dying. **61% of SaaS companies** will use hybrid pricing models by 2026, but no billing platform natively supports outcome-based pricing, EU VAT across 27 member states, or IFRS 15 revenue recognition for variable fees.
+AI agents are replacing human work. Per-seat billing is dying. **61% of SaaS companies** will use hybrid pricing models by 2026, but no billing platform natively supports outcome-based pricing, autonomous agent-to-agent payments, or AI-powered billing workflows.
 
-Stripe has no concept of an "outcome." Chargebee tracks subscriptions. Zuora is enterprise legacy.
+Stripe has no concept of an "outcome." Chargebee tracks subscriptions. Zuora is enterprise legacy. None of them were built for the agentic economy.
 
 ## The Solution
 
-Rupiv.ai lets you charge for **results delivered** -- tickets resolved, fraud prevented, tasks completed -- not seats or API calls. It handles the full billing lifecycle from event ingestion to payment collection, with EU compliance baked in.
+Rupiv.ai is the **next-generation billing platform built for AI-native companies**. Charge for **results delivered** -- tickets resolved, fraud prevented, tasks completed -- not seats or API calls. Powered by 7 LangGraph agents that autonomously handle metering, invoicing, payment collection, dunning, compliance, quoting, and revenue recognition.
 
 ```python
 import rupiv
@@ -46,7 +46,7 @@ client.track_outcome(
 )
 ```
 
-At billing period end, Rupiv.ai validates the outcome against your pricing rules, calculates the charge, applies EU VAT, generates the invoice, collects payment via Mollie/Stripe, and creates the IFRS 15 revenue schedule. Automatically.
+At billing period end, Rupiv.ai's **billing agent** validates the outcome, calculates the charge, applies tax rules, generates the invoice, collects payment, and creates the revenue schedule. Fully autonomous. No human in the loop.
 
 ---
 
@@ -82,13 +82,14 @@ Outcomes are validated before billing. Define rules to prevent gaming:
 }
 ```
 
-### EU Tax Compliance
+### Tax Compliance
 
 - **27 EU member state VAT rates** with automatic rate selection
 - **B2B reverse charge** for cross-border intra-EU transactions
 - **VIES validation** for EU VAT ID verification (async, cached)
 - **One-Stop Shop (OSS)** for cross-border B2C with EUR 10K threshold
 - **ViDA-ready** for 2028 real-time digital reporting mandate
+- **Multi-region**: EU tax engine built-in, Stripe integration for US
 
 ### IFRS 15 Revenue Recognition
 
@@ -142,7 +143,23 @@ Multi-currency with ECB daily rates. Intercompany billing with transfer pricing.
 
 ### Agent-to-Agent Payments
 
-SEPA-native fiat rails for autonomous AI agent transactions via Adyen. Double-entry ledger with reserve-then-settle pattern.
+The core of the agentic economy: AI agents that autonomously pay other AI agents. SEPA-native fiat rails via Adyen with a double-entry ledger and reserve-then-settle pattern. Compliance agent validates every transaction.
+
+### Agentic Billing Agents
+
+7 autonomous LangGraph agents handle billing operations without human intervention:
+
+| Agent | Responsibility |
+|---|---|
+| **Billing Agent** | Metering -> pricing -> invoicing -> payment collection |
+| **Outcome Agent** | Validates outcomes against billable_when rules and policy engine |
+| **Dunning Agent** | Retries failed payments with configurable schedule (24h, 72h, 168h) |
+| **Compliance Agent** | GDPR, VAT, amount limits, PSD2 checks on every transaction |
+| **Quoting Agent** | Generates pricing proposals with policy-gated discount approval |
+| **Revenue Agent** | IFRS 15 obligation identification, allocation, schedule generation |
+| **A2A Agent** | Agent-to-agent SEPA settlement with ledger reserve-then-settle |
+
+Each agent is a LangGraph `StateGraph` with typed state, async nodes, error handling, and checkpointing.
 
 ### Payment Integrations
 
@@ -186,7 +203,7 @@ Intelligent payment routing selects the cheapest PSP per transaction.
 |---|---|
 | Language | Python 3.12+, async-first |
 | Framework | FastAPI (REST + WebSocket) |
-| Agent Runtime | LangGraph (7 stateful agents) |
+| Agent Runtime | LangGraph (7 autonomous billing agents) |
 | Database | PostgreSQL 16 |
 | Analytics | ClickHouse |
 | Queue | Redis 7 |
@@ -437,7 +454,7 @@ docker compose up --build
 
 ### Render (Production)
 
-The project includes a `render.yaml` blueprint for one-click deployment to Render's Frankfurt region:
+The project includes a `render.yaml` blueprint for one-click deployment:
 
 ```bash
 make deploy
@@ -503,5 +520,5 @@ Proprietary. All rights reserved.
 ---
 
 <p align="center">
-  Built in Delft, Netherlands. EU-sovereign.
+  Built for the agentic economy. Headquartered in Delft, Netherlands.
 </p>
