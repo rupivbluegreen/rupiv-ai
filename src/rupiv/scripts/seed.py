@@ -20,6 +20,10 @@ from rupiv.models.event import Event, EventType, OutcomeStatus
 from rupiv.models.invoice import Invoice, InvoiceLineItem, InvoiceStatus, TaxType
 from rupiv.models.plan import BillingInterval, Plan, PricingModel, PricingRule
 from rupiv.models.subscription import Subscription, SubscriptionStatus
+from rupiv.models.entity import EntityType, LegalEntity
+from rupiv.models.policy_rule import PolicyRule
+from rupiv.models.quote import Quote, QuoteLineItem, QuoteStatus
+from rupiv.models.contract import Contract, ContractRenewalType, ContractStatus
 
 log = structlog.get_logger(__name__)
 
@@ -462,6 +466,12 @@ async def _is_empty(session: AsyncSession) -> bool:
 async def _wipe(session: AsyncSession) -> None:
     """Delete all seeded data in reverse dependency order."""
     log.info("wiping_existing_data")
+    await session.execute(text("DELETE FROM contracts"))
+    await session.execute(text("DELETE FROM quote_line_items"))
+    await session.execute(text("DELETE FROM quotes"))
+    await session.execute(text("DELETE FROM approval_records"))
+    await session.execute(text("DELETE FROM policy_rules"))
+    await session.execute(text("DELETE FROM legal_entities"))
     await session.execute(text("DELETE FROM invoice_line_items"))
     await session.execute(text("DELETE FROM invoices"))
     await session.execute(text("DELETE FROM events"))
@@ -749,6 +759,200 @@ async def _seed_invoices(
 
 
 # ---------------------------------------------------------------------------
+# New-module seed helpers (entities, policy rules, quotes, contracts)
+# ---------------------------------------------------------------------------
+
+async def _seed_entities(session: AsyncSession) -> list[LegalEntity]:
+    """Insert a parent BV + two child entities (GmbH, SAS)."""
+    parent = LegalEntity(
+        name="Rupiv BV",
+        entity_type=EntityType.BV,
+        country_code="NL",
+        vat_number="NL861234567B01",
+        registration_number="KVK-12345678",
+        default_currency="EUR",
+    )
+    session.add(parent)
+    await session.flush()
+
+    gmbh = LegalEntity(
+        name="Rupiv GmbH",
+        entity_type=EntityType.GMBH,
+        country_code="DE",
+        vat_number="DE312345678",
+        registration_number="HRB-98765",
+        default_currency="EUR",
+        parent_id=parent.id,
+    )
+    sas = LegalEntity(
+        name="Rupiv SAS",
+        entity_type=EntityType.SAS,
+        country_code="FR",
+        vat_number="FR82123456789",
+        registration_number="RCS-123456",
+        default_currency="EUR",
+        parent_id=parent.id,
+    )
+    session.add_all([gmbh, sas])
+    await session.flush()
+    log.info("entities_created", count=3)
+    return [parent, gmbh, sas]
+
+
+async def _seed_policy_rules(session: AsyncSession) -> list[PolicyRule]:
+    """Insert 3 demo policy rules."""
+    rules = [
+        PolicyRule(
+            name="Auto-approve small invoices",
+            trigger="invoice.generated",
+            conditions=[
+                {"field": "invoice.total", "operator": "lt", "value": 5000},
+            ],
+            action="auto_approve",
+            priority=10,
+        ),
+        PolicyRule(
+            name="CFO approval for large invoices",
+            trigger="invoice.generated",
+            conditions=[
+                {"field": "invoice.total", "operator": "gte", "value": 50000},
+            ],
+            action="require_approval",
+            approver="cfo",
+            escalation_after_hours=24,
+            priority=20,
+        ),
+        PolicyRule(
+            name="Reject low-CSAT outcomes",
+            trigger="outcome.validated",
+            conditions=[
+                {"field": "properties.csat_score", "operator": "lt", "value": 2.0},
+            ],
+            action="reject",
+            priority=5,
+        ),
+    ]
+    session.add_all(rules)
+    await session.flush()
+    log.info("policy_rules_created", count=len(rules))
+    return rules
+
+
+async def _seed_quotes_and_contracts(
+    session: AsyncSession,
+    customers: list[Customer],
+    plans: list[Plan],
+    subs: list[Subscription],
+) -> None:
+    """Insert 2 quotes (one accepted with contract, one pending)."""
+    plan_by_name: dict[str, Plan] = {p.name: p for p in plans}
+    cust_by_ext: dict[str, Customer] = {c.external_id: c for c in customers}
+
+    # Accepted quote for ResolvAI on Growth plan
+    growth_plan = plan_by_name["Growth"]
+    resolvai = cust_by_ext["cust_resolvai"]
+    accepted_quote = Quote(
+        customer_id=resolvai.id,
+        plan_id=growth_plan.id,
+        status=QuoteStatus.ACCEPTED,
+        discount_pct=Decimal("10.00"),
+        estimated_monthly=Decimal("350.0000"),
+        estimated_total=Decimal("4200.0000"),
+        currency="EUR",
+        term_months=12,
+        expires_at=_NOW + timedelta(days=30),
+        accepted_at=_months_ago(3),
+        notes="Growth plan with 10% annual commitment discount.",
+    )
+    session.add(accepted_quote)
+    await session.flush()
+
+    # Line items for accepted quote
+    session.add_all([
+        QuoteLineItem(
+            quote_id=accepted_quote.id,
+            description="Growth plan — monthly base fee",
+            pricing_model="flat",
+            unit_amount=Decimal("149.0000"),
+            estimated_quantity=Decimal("1.0000"),
+            estimated_amount=Decimal("149.0000"),
+        ),
+        QuoteLineItem(
+            quote_id=accepted_quote.id,
+            description="Usage: api_call (est. 20K/mo)",
+            pricing_model="usage",
+            metric="api_call",
+            unit_amount=Decimal("0.1000"),
+            estimated_quantity=Decimal("20.0000"),
+            estimated_amount=Decimal("2.0000"),
+        ),
+        QuoteLineItem(
+            quote_id=accepted_quote.id,
+            description="Outcome: ticket_resolved (est. 200/mo)",
+            pricing_model="outcome",
+            metric="ticket_resolved",
+            unit_amount=Decimal("0.9900"),
+            estimated_quantity=Decimal("200.0000"),
+            estimated_amount=Decimal("198.0000"),
+        ),
+    ])
+
+    # Contract from accepted quote, linked to ResolvAI subscription
+    resolvai_sub = next(s for s in subs if s.customer_id == resolvai.id)
+    contract = Contract(
+        quote_id=accepted_quote.id,
+        subscription_id=resolvai_sub.id,
+        start_date=_months_ago(3).date(),
+        end_date=(_months_ago(3) + timedelta(days=365)).date(),
+        term_months=12,
+        renewal_type=ContractRenewalType.AUTO,
+        early_termination_pct=Decimal("50.00"),
+        status=ContractStatus.ACTIVE,
+    )
+    session.add(contract)
+
+    # Pending quote for LegalMind on Scale plan
+    scale_plan = plan_by_name["Scale"]
+    legalmind = cust_by_ext["cust_legalmind"]
+    pending_quote = Quote(
+        customer_id=legalmind.id,
+        plan_id=scale_plan.id,
+        status=QuoteStatus.SENT,
+        discount_pct=Decimal("5.00"),
+        estimated_monthly=Decimal("800.0000"),
+        estimated_total=Decimal("9600.0000"),
+        currency="EUR",
+        term_months=12,
+        expires_at=_NOW + timedelta(days=14),
+        notes="Upgrade proposal from Growth to Scale.",
+    )
+    session.add(pending_quote)
+    await session.flush()
+
+    session.add_all([
+        QuoteLineItem(
+            quote_id=pending_quote.id,
+            description="Scale plan — monthly base fee",
+            pricing_model="flat",
+            unit_amount=Decimal("499.0000"),
+            estimated_quantity=Decimal("1.0000"),
+            estimated_amount=Decimal("499.0000"),
+        ),
+        QuoteLineItem(
+            quote_id=pending_quote.id,
+            description="Usage: api_call (est. 50K/mo)",
+            pricing_model="usage",
+            metric="api_call",
+            unit_amount=Decimal("0.0600"),
+            estimated_quantity=Decimal("50.0000"),
+            estimated_amount=Decimal("3.0000"),
+        ),
+    ])
+    await session.flush()
+    log.info("quotes_created", count=2, contracts=1)
+
+
+# ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
 
@@ -776,6 +980,9 @@ async def seed(*, force: bool = False) -> None:
         subs = await _seed_subscriptions(session, customers, plans)
         events = await _seed_events(session, customers, subs)
         invoices = await _seed_invoices(session, customers, plans, subs)
+        entities = await _seed_entities(session)
+        policy_rules = await _seed_policy_rules(session)
+        await _seed_quotes_and_contracts(session, customers, plans, subs)
 
         await session.commit()
         log.info(
@@ -785,6 +992,8 @@ async def seed(*, force: bool = False) -> None:
             subscriptions=len(subs),
             events=len(events),
             invoices=len(invoices),
+            entities=len(entities),
+            policy_rules=len(policy_rules),
         )
 
 

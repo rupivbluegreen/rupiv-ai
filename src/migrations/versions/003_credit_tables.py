@@ -1,7 +1,7 @@
 """Add credit_balances and credit_transactions tables.
 
 Revision ID: 003_credit_tables
-Revises: 001_initial
+Revises: 002_api_keys
 Create Date: 2026-04-09
 """
 
@@ -16,7 +16,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "003_credit_tables"
-down_revision: str | None = "001_initial"
+down_revision: str | None = "002_api_keys"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

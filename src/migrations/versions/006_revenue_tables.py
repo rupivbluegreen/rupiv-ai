@@ -1,7 +1,7 @@
 """Add revenue_schedules and revenue_entries tables (IFRS 15).
 
 Revision ID: 006_revenue_tables
-Revises: 003_credit_tables
+Revises: 005_entity_tables
 Create Date: 2026-04-09
 """
 
@@ -16,7 +16,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "006_revenue_tables"
-down_revision: str | None = "003_credit_tables"
+down_revision: str | None = "005_entity_tables"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

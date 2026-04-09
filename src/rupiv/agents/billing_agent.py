@@ -23,7 +23,10 @@ from rupiv.billing.pricing import PricingEngine, PricingModel
 from rupiv.config import get_settings
 from rupiv.db import get_db
 from rupiv.models.invoice import Invoice, InvoiceStatus
+from rupiv.models.policy_rule import PolicyRule
 from rupiv.models.subscription import Subscription
+from rupiv.policy.engine import PolicyEngine, PolicyRuleData
+from rupiv.policy.rules import Condition
 
 log: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
@@ -310,6 +313,125 @@ async def generate_invoice_node(state: BillingState) -> dict[str, Any]:
         return {"error": f"Failed to generate invoice: {exc}"}
 
 
+async def check_invoice_policy(state: BillingState) -> dict[str, Any]:
+    """Evaluate policy rules against the generated invoice.
+
+    Loads active PolicyRules for trigger ``"invoice.generated"`` and
+    evaluates them against the invoice total and customer context.
+    If any rule rejects, sets ``error`` on the state.
+    """
+    if state.get("error"):
+        return {}
+
+    invoice_id = state.get("invoice_id")
+    invoice_total = state.get("invoice_total")
+    if not invoice_id or not invoice_total:
+        return {}
+
+    log.info(
+        "billing_agent.check_invoice_policy",
+        invoice_id=invoice_id,
+        invoice_total=invoice_total,
+    )
+
+    try:
+        async for session in get_db():
+            # Load active policy rules for invoice generation
+            result = await session.execute(
+                select(PolicyRule).where(
+                    PolicyRule.trigger == "invoice.generated",
+                    PolicyRule.is_active.is_(True),
+                )
+            )
+            orm_rules = result.scalars().all()
+
+            if not orm_rules:
+                log.debug("billing_agent.no_invoice_policy_rules")
+                return {}
+
+            # Load customer context from the subscription
+            sub_result = await session.execute(
+                select(Subscription)
+                .options(
+                    selectinload(Subscription.customer),
+                )
+                .where(Subscription.id == state["subscription_id"])
+            )
+            subscription = sub_result.scalar_one_or_none()
+
+            customer_context: dict[str, Any] = {}
+            if subscription and subscription.customer:
+                customer_context = {
+                    "country_code": subscription.customer.country_code,
+                    "is_business": subscription.customer.is_business,
+                }
+
+            # Build policy evaluation context
+            context: dict[str, Any] = {
+                "invoice": {
+                    "total": invoice_total,
+                    "customer": customer_context,
+                },
+            }
+
+            # Convert ORM rules to PolicyRuleData
+            policy_rules: list[PolicyRuleData] = []
+            for rule in orm_rules:
+                conditions: list[Condition] = []
+                for c in rule.conditions or []:
+                    conditions.append(Condition(**c))
+                policy_rules.append(
+                    PolicyRuleData(
+                        name=rule.name,
+                        trigger=rule.trigger,
+                        conditions=conditions,
+                        action=rule.action,  # type: ignore[arg-type]
+                        approver=rule.approver,
+                        escalation_after_hours=rule.escalation_after_hours,
+                        priority=rule.priority,
+                    )
+                )
+
+            # Evaluate
+            engine = PolicyEngine()
+            policy_result = engine.evaluate(context=context, rules=policy_rules)
+
+            if policy_result.action == "reject":
+                log.warning(
+                    "billing_agent.invoice_policy_rejected",
+                    invoice_id=invoice_id,
+                    rule_name=policy_result.rule_name,
+                    reason=policy_result.reason,
+                )
+                return {
+                    "error": (
+                        f"Invoice rejected by policy rule "
+                        f"'{policy_result.rule_name}': {policy_result.reason}"
+                    ),
+                }
+
+            if policy_result.action == "require_approval":
+                log.info(
+                    "billing_agent.invoice_policy_requires_approval",
+                    invoice_id=invoice_id,
+                    rule_name=policy_result.rule_name,
+                    approver=policy_result.approver,
+                )
+                # MVP: log and proceed — don't block payment
+
+            log.debug(
+                "billing_agent.invoice_policy_passed",
+                invoice_id=invoice_id,
+                action=policy_result.action,
+                rule_name=policy_result.rule_name,
+            )
+            return {}
+
+    except Exception as exc:
+        log.error("billing_agent.check_invoice_policy_error", error=str(exc))
+        return {"error": f"Invoice policy check failed: {exc}"}
+
+
 async def attempt_payment(state: BillingState) -> dict[str, Any]:
     """Charge the invoice via Mollie.
 
@@ -432,6 +554,15 @@ async def run_dunning_node(state: BillingState) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+def _route_after_policy_check(
+    state: BillingState,
+) -> Literal["attempt_payment", "__end__"]:
+    """Route to END if the invoice policy check set an error, otherwise proceed."""
+    if state.get("error"):
+        return "__end__"
+    return "attempt_payment"
+
+
 def _route_after_payment(state: BillingState) -> Literal["run_dunning", "__end__"]:
     """Route to dunning on failure, or end on success / error."""
     if state.get("error"):
@@ -490,6 +621,7 @@ _builder.add_node("load_subscription", load_subscription)
 _builder.add_node("aggregate_usage", aggregate_usage_node)
 _builder.add_node("calculate_pricing", calculate_pricing)
 _builder.add_node("generate_invoice", generate_invoice_node)
+_builder.add_node("check_invoice_policy", check_invoice_policy)
 _builder.add_node("attempt_payment", attempt_payment)
 _builder.add_node("handle_payment_result", handle_payment_result)
 _builder.add_node("run_dunning", run_dunning_node)
@@ -498,7 +630,12 @@ _builder.add_edge(START, "load_subscription")
 _builder.add_edge("load_subscription", "aggregate_usage")
 _builder.add_edge("aggregate_usage", "calculate_pricing")
 _builder.add_edge("calculate_pricing", "generate_invoice")
-_builder.add_edge("generate_invoice", "attempt_payment")
+_builder.add_edge("generate_invoice", "check_invoice_policy")
+_builder.add_conditional_edges(
+    "check_invoice_policy",
+    _route_after_policy_check,
+    {"attempt_payment": "attempt_payment", "__end__": END},
+)
 _builder.add_edge("attempt_payment", "handle_payment_result")
 _builder.add_conditional_edges(
     "handle_payment_result",

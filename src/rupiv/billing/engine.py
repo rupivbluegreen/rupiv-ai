@@ -14,11 +14,16 @@ import structlog
 from clickhouse_connect.driver.asyncclient import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sqlalchemy import select
+
 from rupiv.billing.aggregation import aggregate_outcomes, aggregate_usage
 from rupiv.billing.invoicing import generate_invoice
 from rupiv.billing.pricing import PricingEngine, PricingModel
 from rupiv.models.invoice import Invoice
 from rupiv.models.plan import PricingModel as ORMPricingModel
+from rupiv.models.policy_rule import PolicyRule
+from rupiv.policy.engine import PolicyEngine, PolicyRuleData
+from rupiv.policy.rules import Condition
 
 log: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
@@ -66,6 +71,48 @@ async def _aggregate_for_rule(
 
     # Flat rules need no aggregation.
     return result
+
+
+async def _load_policy_rules(
+    session: AsyncSession,
+    trigger: str,
+) -> list[PolicyRuleData]:
+    """Load active PolicyRules for a given trigger and convert to PolicyRuleData.
+
+    Args:
+        session: An active SQLAlchemy async session.
+        trigger: The event trigger to filter on (e.g. ``"invoice.generated"``).
+
+    Returns:
+        A list of ``PolicyRuleData`` objects ready for evaluation.
+    """
+    result = await session.execute(
+        select(PolicyRule).where(
+            PolicyRule.trigger == trigger,
+            PolicyRule.is_active.is_(True),
+        )
+    )
+    orm_rules = result.scalars().all()
+
+    policy_rules: list[PolicyRuleData] = []
+    for rule in orm_rules:
+        conditions: list[Condition] = []
+        for c in rule.conditions or []:
+            conditions.append(Condition(**c))
+
+        policy_rules.append(
+            PolicyRuleData(
+                name=rule.name,
+                trigger=rule.trigger,
+                conditions=conditions,
+                action=rule.action,  # type: ignore[arg-type]
+                approver=rule.approver,
+                escalation_after_hours=rule.escalation_after_hours,
+                priority=rule.priority,
+            )
+        )
+
+    return policy_rules
 
 
 async def run_billing_cycle(
@@ -145,6 +192,54 @@ async def run_billing_cycle(
             "billing.no_line_items",
             subscription_id=str(subscription.id),
             period=period_label,
+        )
+
+    # -- Step 3b: policy evaluation ----------------------------------------
+    subtotal = sum(item.amount for item in line_items)
+
+    policy_rules = await _load_policy_rules(session, trigger="invoice.generated")
+    if policy_rules:
+        policy_context: dict[str, Any] = {
+            "invoice": {
+                "total": str(subtotal),
+                "customer": {
+                    "country_code": customer.country_code,
+                    "is_business": customer.is_business,
+                },
+            },
+        }
+
+        policy_engine = PolicyEngine()
+        policy_result = policy_engine.evaluate(
+            context=policy_context, rules=policy_rules
+        )
+
+        if policy_result.action == "reject":
+            log.warning(
+                "billing.policy_rejected",
+                subscription_id=str(subscription.id),
+                rule_name=policy_result.rule_name,
+                reason=policy_result.reason,
+            )
+            raise ValueError(
+                f"Invoice generation rejected by policy rule "
+                f"'{policy_result.rule_name}': {policy_result.reason}"
+            )
+
+        if policy_result.action == "require_approval":
+            log.info(
+                "billing.policy_requires_approval",
+                subscription_id=str(subscription.id),
+                rule_name=policy_result.rule_name,
+                approver=policy_result.approver,
+            )
+            # MVP: log and proceed — don't block invoice generation
+
+        log.debug(
+            "billing.policy_passed",
+            subscription_id=str(subscription.id),
+            action=policy_result.action,
+            rule_name=policy_result.rule_name,
         )
 
     # -- Step 4: generate invoice -------------------------------------------

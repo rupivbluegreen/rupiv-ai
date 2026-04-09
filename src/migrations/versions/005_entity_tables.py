@@ -1,7 +1,7 @@
 """Add legal_entities table for multi-entity support.
 
 Revision ID: 005_entity_tables
-Revises: 003_credit_tables
+Revises: 004_policy_tables
 Create Date: 2026-04-09
 """
 
@@ -16,7 +16,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "005_entity_tables"
-down_revision: str | None = "003_credit_tables"
+down_revision: str | None = "004_policy_tables"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

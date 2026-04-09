@@ -1,7 +1,7 @@
 """Add quotes, quote_line_items, and contracts tables.
 
 Revision ID: 007_quoting_tables
-Revises: 006
+Revises: 006_revenue_tables
 Create Date: 2026-04-09
 """
 
@@ -16,7 +16,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "007_quoting_tables"
-down_revision: str | None = "006"
+down_revision: str | None = "006_revenue_tables"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
