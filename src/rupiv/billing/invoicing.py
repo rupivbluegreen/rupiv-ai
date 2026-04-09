@@ -2,6 +2,9 @@
 
 Creates SQLAlchemy ORM ``Invoice`` and ``InvoiceLineItem`` objects,
 calculates EU VAT (all 27 member states), and handles B2B reverse charge.
+
+VAT logic lives in :mod:`rupiv.tax` — this module imports
+:func:`~rupiv.tax.vat_engine.calculate_vat` from there.
 """
 
 from __future__ import annotations
@@ -21,100 +24,12 @@ from rupiv.models.invoice import (
     InvoiceStatus,
     TaxType,
 )
+from rupiv.tax.vat_engine import calculate_vat  # noqa: F401 — re-exported for back-compat
 
 log: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
-# ---------------------------------------------------------------------------
-# EU VAT standard rates (all 27 member states, 2026 rates)
-# ---------------------------------------------------------------------------
-
-EU_VAT_RATES: dict[str, Decimal] = {
-    "AT": Decimal("20"),     # Austria
-    "BE": Decimal("21"),     # Belgium
-    "BG": Decimal("20"),     # Bulgaria
-    "HR": Decimal("25"),     # Croatia
-    "CY": Decimal("19"),     # Cyprus
-    "CZ": Decimal("21"),     # Czech Republic
-    "DK": Decimal("25"),     # Denmark
-    "EE": Decimal("22"),     # Estonia
-    "FI": Decimal("25.5"),   # Finland
-    "FR": Decimal("20"),     # France
-    "DE": Decimal("19"),     # Germany
-    "GR": Decimal("24"),     # Greece
-    "HU": Decimal("27"),     # Hungary
-    "IE": Decimal("23"),     # Ireland
-    "IT": Decimal("22"),     # Italy
-    "LV": Decimal("21"),     # Latvia
-    "LT": Decimal("21"),     # Lithuania
-    "LU": Decimal("17"),     # Luxembourg
-    "MT": Decimal("18"),     # Malta
-    "NL": Decimal("21"),     # Netherlands
-    "PL": Decimal("23"),     # Poland
-    "PT": Decimal("23"),     # Portugal
-    "RO": Decimal("19"),     # Romania
-    "SK": Decimal("23"),     # Slovakia
-    "SI": Decimal("22"),     # Slovenia
-    "ES": Decimal("21"),     # Spain
-    "SE": Decimal("25"),     # Sweden
-}
-
 _TWO_PLACES = Decimal("0.01")
 _HUNDRED = Decimal("100")
-
-# Rupiv B.V. is based in the Netherlands.
-SELLER_COUNTRY = "NL"
-
-
-# ---------------------------------------------------------------------------
-# VAT calculation
-# ---------------------------------------------------------------------------
-
-
-def calculate_vat(
-    country_code: str,
-    is_business: bool,
-    subtotal: Decimal,
-    seller_country: str = SELLER_COUNTRY,
-) -> tuple[Decimal, Decimal, TaxType | None]:
-    """Compute VAT for a transaction.
-
-    Rules implemented:
-    1. Non-EU buyer              -> no VAT             (``None``)
-    2. EU B2B cross-border       -> reverse charge      (``TaxType.REVERSE_CHARGE``)
-    3. EU B2C or domestic B2B/B2C -> standard rate of
-       *buyer* country (B2C cross-border / OSS) or
-       *seller* country (domestic)
-
-    Args:
-        country_code: ISO 3166-1 alpha-2 code of the buyer.
-        is_business: Whether the buyer is a VAT-registered business.
-        subtotal: Invoice subtotal before tax.
-        seller_country: ISO 3166-1 alpha-2 code of the seller.
-
-    Returns:
-        ``(tax_amount, tax_rate, tax_type)`` where *tax_rate* is as a
-        percentage (e.g. ``Decimal("21")`` for 21 %) and *tax_type* is
-        ``None`` when outside the EU.
-    """
-    buyer_in_eu = country_code in EU_VAT_RATES
-
-    if not buyer_in_eu:
-        return Decimal("0"), Decimal("0"), None
-
-    cross_border = country_code != seller_country
-
-    if is_business and cross_border:
-        # EU B2B cross-border: reverse charge — zero-rated
-        return Decimal("0"), Decimal("0"), TaxType.REVERSE_CHARGE
-
-    # EU B2C cross-border (OSS) or domestic sale
-    if cross_border:
-        rate = EU_VAT_RATES[country_code]
-    else:
-        rate = EU_VAT_RATES[seller_country]
-
-    tax = (subtotal * rate / _HUNDRED).quantize(_TWO_PLACES, rounding=ROUND_HALF_UP)
-    return tax, rate, TaxType.STANDARD
 
 
 # ---------------------------------------------------------------------------

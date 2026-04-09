@@ -30,6 +30,7 @@ dependencies = [
     "httpx>=0.28",
     # Auth
     "python-jose[cryptography]>=3.3",
+    "python-dateutil>=2.9.0.post0",
 ]
 
 [dependency-groups]
