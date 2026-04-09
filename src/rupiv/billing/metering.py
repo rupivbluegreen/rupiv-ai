@@ -17,6 +17,7 @@ from rupiv.config import get_settings
 log: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
 EVENTS_QUEUE_KEY = "rupiv:events:queue"
+EVENTS_STREAM_CHANNEL = "rupiv:events:stream"
 
 
 async def ingest_event(
@@ -74,13 +75,16 @@ async def ingest_event(
             decode_responses=True,
         )
         try:
-            await redis_client.rpush(EVENTS_QUEUE_KEY, json.dumps(payload))
+            event_json = json.dumps(payload)
+            await redis_client.rpush(EVENTS_QUEUE_KEY, event_json)
             log.info(
                 "event.enqueued",
                 event_id=event_id,
                 customer_id=customer_id,
                 metric=metric,
             )
+            # Publish to the real-time stream channel for WebSocket subscribers
+            await redis_client.publish(EVENTS_STREAM_CHANNEL, event_json)
         finally:
             await redis_client.aclose()
     except Exception:
