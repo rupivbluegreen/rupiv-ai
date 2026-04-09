@@ -2,7 +2,10 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, X } from 'lucide-react';
 import DataTable, { type Column } from '../components/DataTable';
+import { useToast } from '../components/Toast';
 import { fetchCustomers, createCustomer, type Customer } from '../lib/api';
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const columns: Column<Customer>[] = [
   {
@@ -22,8 +25,14 @@ const columns: Column<Customer>[] = [
   },
 ];
 
+interface FormErrors {
+  name?: string;
+  email?: string;
+}
+
 export default function Customers() {
   const queryClient = useQueryClient();
+  const { showToast } = useToast();
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({
     name: '',
@@ -31,6 +40,7 @@ export default function Customers() {
     country: '',
     currency: 'EUR',
   });
+  const [errors, setErrors] = useState<FormErrors>({});
 
   const { data: customers = [], isLoading } = useQuery({
     queryKey: ['customers'],
@@ -41,13 +51,34 @@ export default function Customers() {
     mutationFn: createCustomer,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['customers'] });
+      queryClient.invalidateQueries({ queryKey: ['overview-stats'] });
       setShowForm(false);
       setForm({ name: '', email: '', country: '', currency: 'EUR' });
+      setErrors({});
+      showToast('Customer created successfully.', 'success');
+    },
+    onError: () => {
+      showToast('Failed to create customer. Please try again.', 'error');
     },
   });
 
+  const validate = (): boolean => {
+    const newErrors: FormErrors = {};
+    if (!form.name.trim()) {
+      newErrors.name = 'Name is required.';
+    }
+    if (!form.email.trim()) {
+      newErrors.email = 'Email is required.';
+    } else if (!EMAIL_REGEX.test(form.email)) {
+      newErrors.email = 'Please enter a valid email address.';
+    }
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!validate()) return;
     mutation.mutate(form);
   };
 
@@ -76,7 +107,10 @@ export default function Customers() {
               New Customer
             </h2>
             <button
-              onClick={() => setShowForm(false)}
+              onClick={() => {
+                setShowForm(false);
+                setErrors({});
+              }}
               className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
             >
               <X className="h-5 w-5" />
@@ -89,23 +123,41 @@ export default function Customers() {
               </label>
               <input
                 type="text"
-                required
                 value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                onChange={(e) => {
+                  setForm({ ...form, name: e.target.value });
+                  if (errors.name) setErrors({ ...errors, name: undefined });
+                }}
+                className={`w-full rounded-lg border px-3 py-2 text-sm focus:ring-1 focus:outline-none ${
+                  errors.name
+                    ? 'border-red-300 focus:border-red-500 focus:ring-red-500'
+                    : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500'
+                }`}
               />
+              {errors.name && (
+                <p className="mt-1 text-xs text-red-600">{errors.name}</p>
+              )}
             </div>
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-700">
                 Email
               </label>
               <input
-                type="email"
-                required
+                type="text"
                 value={form.email}
-                onChange={(e) => setForm({ ...form, email: e.target.value })}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                onChange={(e) => {
+                  setForm({ ...form, email: e.target.value });
+                  if (errors.email) setErrors({ ...errors, email: undefined });
+                }}
+                className={`w-full rounded-lg border px-3 py-2 text-sm focus:ring-1 focus:outline-none ${
+                  errors.email
+                    ? 'border-red-300 focus:border-red-500 focus:ring-red-500'
+                    : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500'
+                }`}
               />
+              {errors.email && (
+                <p className="mt-1 text-xs text-red-600">{errors.email}</p>
+              )}
             </div>
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-700">
@@ -137,7 +189,10 @@ export default function Customers() {
             <div className="col-span-2 flex justify-end gap-3 pt-2">
               <button
                 type="button"
-                onClick={() => setShowForm(false)}
+                onClick={() => {
+                  setShowForm(false);
+                  setErrors({});
+                }}
                 className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
               >
                 Cancel
@@ -151,11 +206,6 @@ export default function Customers() {
               </button>
             </div>
           </form>
-          {mutation.isError && (
-            <p className="mt-3 text-sm text-red-600">
-              Failed to create customer. Please try again.
-            </p>
-          )}
         </div>
       )}
 

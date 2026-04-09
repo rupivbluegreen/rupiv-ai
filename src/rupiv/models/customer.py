@@ -11,6 +11,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from rupiv.db import Base
 
 if TYPE_CHECKING:
+    from rupiv.models.api_key import ApiKey
     from rupiv.models.invoice import Invoice
     from rupiv.models.subscription import Subscription
 
@@ -55,6 +56,10 @@ class Customer(Base):
         lazy="selectin",
     )
     invoices: Mapped[list[Invoice]] = relationship(
+        back_populates="customer",
+        lazy="selectin",
+    )
+    api_keys: Mapped[list[ApiKey]] = relationship(
         back_populates="customer",
         lazy="selectin",
     )

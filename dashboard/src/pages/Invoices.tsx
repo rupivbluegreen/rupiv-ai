@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import DataTable, { type Column } from '../components/DataTable';
-import { fetchInvoices, type Invoice } from '../lib/api';
+import { fetchInvoices, formatEUR, type Invoice } from '../lib/api';
 
 const statusColors: Record<string, string> = {
   draft: 'bg-gray-100 text-gray-700',
@@ -28,9 +28,7 @@ const columns: Column<Invoice>[] = [
     key: 'amount',
     header: 'Amount',
     render: (row) => (
-      <span>
-        {row.currency} {row.amount}
-      </span>
+      <span>{formatEUR(parseFloat(row.amount || '0'))}</span>
     ),
   },
   {
@@ -59,14 +57,9 @@ export default function Invoices() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
   const { data: invoices = [], isLoading } = useQuery({
-    queryKey: ['invoices'],
-    queryFn: fetchInvoices,
+    queryKey: ['invoices', statusFilter],
+    queryFn: () => fetchInvoices(statusFilter),
   });
-
-  const filtered =
-    statusFilter === 'all'
-      ? invoices
-      : invoices.filter((inv: Invoice) => inv.status === statusFilter);
 
   return (
     <div className="space-y-6">
@@ -105,7 +98,7 @@ export default function Invoices() {
       ) : (
         <DataTable
           columns={columns}
-          data={filtered}
+          data={invoices}
           emptyMessage="No invoices found."
         />
       )}

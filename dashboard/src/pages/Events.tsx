@@ -1,7 +1,14 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { RefreshCw } from 'lucide-react';
 import DataTable, { type Column } from '../components/DataTable';
 import { fetchEvents, type Event } from '../lib/api';
+
+const outcomeStatusColors: Record<string, string> = {
+  pending: 'bg-yellow-100 text-yellow-700',
+  validated: 'bg-green-100 text-green-700',
+  rejected: 'bg-red-100 text-red-700',
+};
 
 const columns: Column<Event>[] = [
   {
@@ -52,6 +59,24 @@ const columns: Column<Event>[] = [
     },
   },
   {
+    key: 'outcome_status',
+    header: 'Outcome Status',
+    render: (row) => {
+      if (row.type !== 'outcome' || !row.outcome_status) {
+        return <span className="text-gray-300">--</span>;
+      }
+      return (
+        <span
+          className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${
+            outcomeStatusColors[row.outcome_status] ?? 'bg-gray-100 text-gray-700'
+          }`}
+        >
+          {row.outcome_status}
+        </span>
+      );
+    },
+  },
+  {
     key: 'created_at',
     header: 'Timestamp',
     render: (row) => new Date(row.created_at).toLocaleString(),
@@ -59,14 +84,23 @@ const columns: Column<Event>[] = [
 ];
 
 export default function Events() {
+  const queryClient = useQueryClient();
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [metricFilter, setMetricFilter] = useState<string>('');
 
-  const { data: events = [], isLoading } = useQuery({
+  const {
+    data: events = [],
+    isLoading,
+    isFetching,
+  } = useQuery({
     queryKey: ['events'],
     queryFn: fetchEvents,
     refetchInterval: 5000,
   });
+
+  const handleRefresh = () => {
+    queryClient.invalidateQueries({ queryKey: ['events'] });
+  };
 
   const filtered = events.filter((evt: Event) => {
     if (typeFilter !== 'all' && evt.type !== typeFilter) return false;
@@ -79,11 +113,21 @@ export default function Events() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-gray-900">Events</h1>
-        <p className="mt-1 text-sm text-gray-500">
-          Real-time event stream. Auto-refreshes every 5 seconds.
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold text-gray-900">Events</h1>
+          <p className="mt-1 text-sm text-gray-500">
+            Real-time event stream. Auto-refreshes every 5 seconds.
+          </p>
+        </div>
+        <button
+          onClick={handleRefresh}
+          disabled={isFetching}
+          className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-colors"
+        >
+          <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+          Refresh
+        </button>
       </div>
 
       <div className="flex items-center gap-4">

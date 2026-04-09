@@ -2,12 +2,20 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, X } from 'lucide-react';
 import DataTable, { type Column } from '../components/DataTable';
+import { useToast } from '../components/Toast';
 import {
   fetchPlans,
   createPlan,
   type Plan,
   type PricingRule,
 } from '../lib/api';
+
+const modelBadgeColors: Record<string, string> = {
+  flat: 'bg-gray-100 text-gray-700',
+  usage: 'bg-cyan-50 text-cyan-700',
+  outcome: 'bg-purple-50 text-purple-700',
+  tiered: 'bg-amber-50 text-amber-700',
+};
 
 const columns: Column<Plan>[] = [
   {
@@ -25,7 +33,9 @@ const columns: Column<Plan>[] = [
         {row.pricing_rules.map((rule: PricingRule, i: number) => (
           <span
             key={i}
-            className="inline-flex rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700"
+            className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${
+              modelBadgeColors[rule.model] ?? 'bg-blue-50 text-blue-700'
+            }`}
           >
             {rule.model}: {rule.metric}
           </span>
@@ -48,6 +58,7 @@ const emptyRule: PricingRule = { metric: '', model: 'flat', unit_price: '' };
 
 export default function Plans() {
   const queryClient = useQueryClient();
+  const { showToast } = useToast();
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({
     name: '',
@@ -66,6 +77,10 @@ export default function Plans() {
       queryClient.invalidateQueries({ queryKey: ['plans'] });
       setShowForm(false);
       setForm({ name: '', currency: 'EUR', pricing_rules: [{ ...emptyRule }] });
+      showToast('Plan created successfully.', 'success');
+    },
+    onError: () => {
+      showToast('Failed to create plan. Please try again.', 'error');
     },
   });
 
@@ -252,11 +267,6 @@ export default function Plans() {
               </button>
             </div>
           </form>
-          {mutation.isError && (
-            <p className="mt-3 text-sm text-red-600">
-              Failed to create plan. Please try again.
-            </p>
-          )}
         </div>
       )}
 

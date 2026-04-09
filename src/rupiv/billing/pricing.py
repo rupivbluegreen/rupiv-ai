@@ -29,6 +29,7 @@ class PricingModel(str, Enum):
     USAGE = "usage"
     OUTCOME = "outcome"
     TIERED = "tiered"
+    CREDIT = "credit"
 
 
 @runtime_checkable
@@ -266,6 +267,39 @@ class PricingEngine:
         )
         return _round_money(total)
 
+    # -- Credit -------------------------------------------------------------
+
+    @staticmethod
+    def calculate_credit(rule: Any, quantity: Decimal) -> Decimal:
+        """Calculate the monetary value of consumed credits.
+
+        Reads ``credits_per_unit`` and ``credit_rate`` from the rule's
+        ``outcome_rules`` JSONB.  The formula is::
+
+            total_credits = quantity * credits_per_unit
+            amount = total_credits * credit_rate
+        """
+        outcome_cfg: dict[str, Any] = getattr(rule, "outcome_rules", None) or {}
+        credits_per_unit = _to_decimal(outcome_cfg.get("credits_per_unit", 1))
+        credit_rate = _to_decimal(outcome_cfg.get("credit_rate", 0))
+
+        if credit_rate == Decimal("0"):
+            raise ValueError("Credit rule must have a credit_rate in outcome_rules")
+
+        total_credits = quantity * credits_per_unit
+        total = total_credits * credit_rate
+
+        log.debug(
+            "pricing.credit",
+            description=_rule_description(rule),
+            quantity=str(quantity),
+            credits_per_unit=str(credits_per_unit),
+            credit_rate=str(credit_rate),
+            total_credits=str(total_credits),
+            total=str(total),
+        )
+        return _round_money(total)
+
     # -- Main entry point ---------------------------------------------------
 
     def calculate_line_items(
@@ -343,6 +377,29 @@ class PricingEngine:
                         amount=amount,
                         metric=metric or None,
                         pricing_model=PricingModel.OUTCOME,
+                    )
+                )
+
+            elif model == PricingModel.CREDIT:
+                # Credit-based pricing: outcome_rules contains
+                # {"credits_per_unit": 1, "credit_rate": 0.05}
+                outcome_cfg = getattr(rule, "outcome_rules", None) or {}
+                credits_per_unit = _to_decimal(outcome_cfg.get("credits_per_unit", 1))
+                credit_rate = _to_decimal(outcome_cfg.get("credit_rate", 0))
+                if credit_rate == Decimal("0"):
+                    raise ValueError("Credit rule must have a credit_rate in outcome_rules")
+
+                qty = _to_decimal(metric_data.get("quantity", 0))
+                total_credits = qty * credits_per_unit
+                amount = self.calculate_credit(rule, qty)
+                line_items.append(
+                    LineItem(
+                        description=desc,
+                        quantity=total_credits,
+                        unit_amount=credit_rate,
+                        amount=amount,
+                        metric=metric or None,
+                        pricing_model=PricingModel.CREDIT,
                     )
                 )
 

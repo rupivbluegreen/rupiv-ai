@@ -25,15 +25,16 @@ dev: ## Start all services via docker-compose with hot-reload
 	docker compose up --build
 
 test: ## Run the test suite with coverage
-	$(PYTEST) --cov=rupiv --cov-report=term-missing
+	$(PYTEST) tests/ -x --tb=short --cov=src/rupiv --cov-report=term-missing
 
 lint: ## Run linters (ruff + pyright)
-	$(RUFF) check .
+	$(RUFF) check src/ tests/
+	$(RUFF) format --check src/ tests/
 	$(PYRIGHT)
 
 format: ## Auto-format code with ruff
-	$(RUFF) format .
-	$(RUFF) check --fix .
+	$(RUFF) format src/ tests/
+	$(RUFF) check --fix src/ tests/
 
 migrate: ## Apply all pending database migrations
 	$(ALEMBIC) upgrade head
@@ -42,7 +43,7 @@ migration: ## Create a new migration (usage: make migration msg="add users table
 	$(ALEMBIC) revision --autogenerate -m "$(msg)"
 
 seed: ## Seed the database with sample data
-	$(PYTHON) -m rupiv.scripts.seed
+	$(PYTHON) -m rupiv.seed
 
 sdk-build: ## Build the client SDK package
 	cd sdk && npm run build

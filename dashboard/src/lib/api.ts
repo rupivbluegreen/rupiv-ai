@@ -17,6 +17,15 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json();
 }
 
+/** Safe wrapper that returns a fallback on network/API errors */
+async function safeRequest<T>(path: string, fallback: T, options?: RequestInit): Promise<T> {
+  try {
+    return await request<T>(path, options);
+  } catch {
+    return fallback;
+  }
+}
+
 // --- Types ---
 
 export interface Customer {
@@ -51,6 +60,7 @@ export interface Event {
   customer_name?: string;
   properties: Record<string, unknown>;
   status: string;
+  outcome_status?: 'pending' | 'validated' | 'rejected';
   created_at: string;
 }
 
@@ -63,6 +73,14 @@ export interface Invoice {
   currency: string;
   status: 'draft' | 'open' | 'paid' | 'void' | 'uncollectible';
   due_date: string;
+  created_at: string;
+}
+
+export interface Subscription {
+  id: string;
+  customer_id: string;
+  plan_id: string;
+  status: string;
   created_at: string;
 }
 
@@ -79,22 +97,47 @@ export interface CreatePlanInput {
   pricing_rules: PricingRule[];
 }
 
+export interface CreateSubscriptionInput {
+  customer_id: string;
+  plan_id: string;
+}
+
+export interface OverviewStats {
+  mrr: number;
+  arr: number;
+  activeCustomers: number;
+  eventsThisMonth: number;
+}
+
+// --- Currency Formatting ---
+
+export const formatEUR = new Intl.NumberFormat('de-DE', {
+  style: 'currency',
+  currency: 'EUR',
+}).format;
+
 // --- API Functions ---
 
 export function fetchCustomers(): Promise<Customer[]> {
-  return request<Customer[]>('/customers');
+  return safeRequest<Customer[]>('/customers', []);
 }
 
 export function fetchPlans(): Promise<Plan[]> {
-  return request<Plan[]>('/plans');
+  return safeRequest<Plan[]>('/plans', []);
 }
 
-export function fetchInvoices(): Promise<Invoice[]> {
-  return request<Invoice[]>('/invoices');
+export function fetchInvoices(status?: string): Promise<Invoice[]> {
+  const query = status && status !== 'all' ? `?status=${status}` : '';
+  return safeRequest<Invoice[]>(`/invoices${query}`, []);
 }
 
 export function fetchEvents(): Promise<Event[]> {
-  return request<Event[]>('/events');
+  return safeRequest<Event[]>('/events', []);
+}
+
+export function fetchSubscriptions(customerId?: string): Promise<Subscription[]> {
+  const query = customerId ? `?customer_id=${customerId}` : '';
+  return safeRequest<Subscription[]>(`/subscriptions${query}`, []);
 }
 
 export function createCustomer(data: CreateCustomerInput): Promise<Customer> {
@@ -109,4 +152,38 @@ export function createPlan(data: CreatePlanInput): Promise<Plan> {
     method: 'POST',
     body: JSON.stringify(data),
   });
+}
+
+export function createSubscription(data: CreateSubscriptionInput): Promise<Subscription> {
+  return request<Subscription>('/subscriptions', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function fetchOverviewStats(): Promise<OverviewStats> {
+  const [customers, invoices, events] = await Promise.all([
+    safeRequest<Customer[]>('/customers', []),
+    safeRequest<Invoice[]>('/invoices', []),
+    safeRequest<Event[]>('/events', []),
+  ]);
+
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+  // MRR: sum of paid + open invoice amounts (approximation from recent invoices)
+  const mrr = invoices
+    .filter((inv) => inv.status === 'paid' || inv.status === 'open')
+    .reduce((sum, inv) => sum + parseFloat(inv.amount || '0'), 0);
+
+  const eventsThisMonth = events.filter(
+    (evt) => new Date(evt.created_at) >= startOfMonth
+  ).length;
+
+  return {
+    mrr,
+    arr: mrr * 12,
+    activeCustomers: customers.length,
+    eventsThisMonth,
+  };
 }
