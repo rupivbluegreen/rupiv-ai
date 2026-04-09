@@ -1,0 +1,58 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+# Deploys to Frankfurt (eu-central-1)
+
+services:
+  - type: web
+    name: rupiv-api
+    runtime: python
+    region: frankfurt
+    plan: standard
+    buildCommand: pip install uv && uv sync --frozen
+    startCommand: uv run uvicorn rupiv.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /healthz
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: APP_SECRET_KEY
+        generateValue: true
+      - key: CORS_ORIGINS
+        value: https://app.rupiv.ai
+      - key: DATABASE_URL
+        fromDatabase:
+          name: rupiv-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: rupiv-redis
+          type: redis
+          property: connectionString
+      - key: CLICKHOUSE_URL
+        sync: false
+      - key: CLICKHOUSE_DATABASE
+        value: rupiv
+      - key: MOLLIE_API_KEY
+        sync: false
+      - key: ADYEN_API_KEY
+        sync: false
+      - key: ADYEN_MERCHANT_ACCOUNT
+        sync: false
+      - key: CLERK_SECRET_KEY
+        sync: false
+      - key: CLERK_PUBLISHABLE_KEY
+        sync: false
+      - key: OTEL_EXPORTER_OTLP_ENDPOINT
+        sync: false
+
+databases:
+  - name: rupiv-db
+    region: frankfurt
+    plan: standard
+    databaseName: rupiv
+    user: rupiv
+    postgresMajorVersion: 16
+
+  - name: rupiv-redis
+    region: frankfurt
+    plan: standard
+    type: redis
+    maxmemoryPolicy: allkeys-lru
