@@ -2,18 +2,30 @@ import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard,
   Users,
+  Building2,
   CreditCard,
+  FlaskConical,
+  ClipboardList,
   Activity,
   FileText,
+  BookOpen,
+  Shield,
+  BarChart3,
 } from 'lucide-react';
 import clsx from 'clsx';
 
 const navItems = [
-  { to: '/', label: 'Overview', icon: LayoutDashboard },
+  { to: '/overview', label: 'Overview', icon: LayoutDashboard },
   { to: '/customers', label: 'Customers', icon: Users },
+  { to: '/entities', label: 'Entities', icon: Building2 },
   { to: '/plans', label: 'Plans', icon: CreditCard },
+  { to: '/pricing-studio', label: 'Pricing Studio', icon: FlaskConical },
+  { to: '/quotes', label: 'Quotes', icon: ClipboardList },
   { to: '/events', label: 'Events', icon: Activity },
   { to: '/invoices', label: 'Invoices', icon: FileText },
+  { to: '/revenue', label: 'Revenue', icon: BookOpen },
+  { to: '/policies', label: 'Policies', icon: Shield },
+  { to: '/payment-analytics', label: 'Payment Analytics', icon: BarChart3 },
 ];
 
 export default function Sidebar() {
@@ -31,7 +43,7 @@ export default function Sidebar() {
           <NavLink
             key={to}
             to={to}
-            end={to === '/'}
+            end={to === '/overview'}
             className={({ isActive }) =>
               clsx(
                 'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
