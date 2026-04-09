@@ -1,7 +1,7 @@
-"""Mollie payment integration for Rupiv.ai.
+"""Payment integration for Rupiv.ai.
 
 Handles payment creation, status retrieval, refunds, invoice charging,
-and webhook processing via the Mollie v2 API.
+and webhook processing via the Mollie v2 API and Stripe v1 API.
 """
 
 from __future__ import annotations
@@ -11,11 +11,17 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 
+import json
+
 import httpx
 import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from rupiv.billing.stripe_client import (
+    StripeClient,
+    verify_webhook_signature,
+)
 from rupiv.models.invoice import Invoice, InvoiceStatus
 
 log = structlog.get_logger(__name__)
@@ -330,6 +336,138 @@ async def process_webhook(
         payment_id=payment_id,
         invoice_id=str(invoice.id),
         old_status=invoice.status,
+        new_status=new_status.value,
+    )
+
+    return invoice
+
+
+# ---------------------------------------------------------------------------
+# Stripe invoice charging
+# ---------------------------------------------------------------------------
+
+
+async def charge_invoice_stripe(
+    stripe: StripeClient,
+    invoice: Invoice,
+    webhook_base_url: str,
+) -> PaymentResult:
+    """Create a Stripe PaymentIntent for *invoice* and update its payment ID.
+
+    Uses ``invoice.id`` (stringified) as the idempotency key so retries
+    are safe.
+    """
+    idempotency_key = str(invoice.id)
+
+    try:
+        intent = await stripe.create_payment_intent(
+            amount=Decimal(str(invoice.total)),
+            currency=invoice.currency,
+            description=f"Invoice {invoice.invoice_number}",
+            metadata={"invoice_id": idempotency_key},
+            idempotency_key=idempotency_key,
+        )
+    except httpx.HTTPStatusError as exc:
+        log.error(
+            "stripe.charge_failed",
+            invoice_id=idempotency_key,
+            status_code=exc.response.status_code,
+            detail=exc.response.text,
+        )
+        return PaymentResult(
+            success=False,
+            payment_id="",
+            error=f"Stripe API error: {exc.response.status_code}",
+        )
+
+    invoice.stripe_payment_intent_id = intent.id
+
+    log.info(
+        "payment.stripe_charge_initiated",
+        invoice_id=idempotency_key,
+        payment_intent_id=intent.id,
+        amount=str(intent.amount),
+        currency=intent.currency,
+    )
+
+    return PaymentResult(
+        success=True,
+        payment_id=intent.id,
+        checkout_url=None,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Stripe webhook processing
+# ---------------------------------------------------------------------------
+
+# Stripe event type -> Invoice status mapping
+_STRIPE_EVENT_TO_INVOICE: dict[str, InvoiceStatus] = {
+    "payment_intent.succeeded": InvoiceStatus.PAID,
+    "payment_intent.payment_failed": InvoiceStatus.UNCOLLECTIBLE,
+}
+
+
+async def process_stripe_webhook(
+    stripe: StripeClient,
+    session: AsyncSession,
+    payload: bytes,
+    signature: str,
+    webhook_secret: str,
+) -> Invoice | None:
+    """Verify a Stripe webhook signature and process the event.
+
+    Returns the updated :class:`Invoice`, or ``None`` if no invoice was
+    found for the event's PaymentIntent.
+    """
+    if not verify_webhook_signature(payload, signature, webhook_secret):
+        log.warning("stripe.webhook_invalid_signature")
+        raise ValueError("Invalid Stripe webhook signature")
+
+    event = json.loads(payload)
+    event_type: str = event.get("type", "")
+    payment_intent_data: dict = event.get("data", {}).get("object", {})
+    payment_intent_id: str = payment_intent_data.get("id", "")
+
+    log.info(
+        "stripe.webhook_processing",
+        event_type=event_type,
+        payment_intent_id=payment_intent_id,
+    )
+
+    new_status = _STRIPE_EVENT_TO_INVOICE.get(event_type)
+    if new_status is None:
+        log.info(
+            "stripe.webhook_unhandled_event",
+            event_type=event_type,
+        )
+        return None
+
+    result = await session.execute(
+        select(Invoice).where(
+            Invoice.stripe_payment_intent_id == payment_intent_id
+        )
+    )
+    invoice: Invoice | None = result.scalar_one_or_none()
+
+    if invoice is None:
+        log.warning(
+            "stripe.webhook_invoice_not_found",
+            payment_intent_id=payment_intent_id,
+        )
+        return None
+
+    old_status = invoice.status
+    invoice.status = new_status
+
+    if new_status == InvoiceStatus.PAID:
+        invoice.paid_at = datetime.now(timezone.utc)
+
+    log.info(
+        "stripe.webhook_invoice_updated",
+        payment_intent_id=payment_intent_id,
+        invoice_id=str(invoice.id),
+        old_status=old_status.value if hasattr(old_status, "value") else str(old_status),
         new_status=new_status.value,
     )
 

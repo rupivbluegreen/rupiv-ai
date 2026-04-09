@@ -42,6 +42,14 @@ class Settings(BaseSettings):
         default=None,
         description="Adyen merchant account identifier (optional in dev)",
     )
+    STRIPE_API_KEY: str = Field(
+        default="",
+        description="Stripe API key for US payment processing (optional in dev)",
+    )
+    STRIPE_WEBHOOK_SECRET: str = Field(
+        default="",
+        description="Stripe webhook signing secret (optional in dev)",
+    )
 
     # --- Auth ---
     CLERK_SECRET_KEY: str | None = Field(

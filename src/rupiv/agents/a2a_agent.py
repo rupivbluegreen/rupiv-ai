@@ -1,21 +1,32 @@
 """LangGraph agent-to-agent (A2A) SEPA settlement agent.
 
-Stub implementation for post-MVP.  Orchestrates autonomous payments
-between AI agents via SEPA fiat rails (Adyen EU), with compliance
-checks and double-entry ledger bookkeeping.
+Orchestrates autonomous payments between AI agents via SEPA fiat rails
+(Adyen EU), with compliance checks and double-entry ledger bookkeeping.
+
+Flow: validate_intent -> compliance_check -> reserve_funds -> execute_transfer -> settle
+Each node can set ``error`` to abort the graph early via conditional edges.
 """
 
 from __future__ import annotations
 
 import uuid as _uuid_mod
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any, Literal, TypedDict
 
 import structlog
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 
+from rupiv.billing import ledger
+from rupiv.billing.adyen_client import AdyenClient, AdyenTransfer
+from rupiv.config import get_settings
+from rupiv.policy.engine import PolicyEngine
+from rupiv.policy.rules import PolicyRuleData
+
 log: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
+
+# Currencies supported for A2A SEPA transfers (EUR-only for MVP)
+SUPPORTED_CURRENCIES: frozenset[str] = frozenset({"EUR"})
 
 # ---------------------------------------------------------------------------
 # State schema
@@ -31,13 +42,59 @@ class A2AState(TypedDict):
     amount: str  # Decimal as string
     currency: str
     reason: str
+    seller_iban: str | None
+    seller_bic: str | None
     compliance_passed: bool | None
+    ledger_transaction_id: str | None
     ledger_debit_id: str | None
     ledger_credit_id: str | None
-    transfer_id: str | None  # SEPA transfer reference
+    transfer_id: str | None  # SEPA transfer / PSP reference
+    psp_reference: str | None
     settlement_status: str | None  # "pending" | "settled" | "failed"
     error: str | None
     messages: list
+
+
+# ---------------------------------------------------------------------------
+# Module-level singletons (lazy-initialised)
+# ---------------------------------------------------------------------------
+
+_adyen_client: AdyenClient | None = None
+_policy_engine: PolicyEngine = PolicyEngine()
+
+# In-memory store for agent accounts (replace with DB in production)
+# Maps agent_id -> {"iban": str, "bic": str | None, "active": bool}
+_agent_accounts: dict[str, dict[str, Any]] = {}
+
+# In-memory store for policy rules (replace with DB in production)
+_policy_rules: list[PolicyRuleData] = []
+
+
+def get_adyen_client() -> AdyenClient:
+    """Return the module-level AdyenClient, creating it on first call."""
+    global _adyen_client
+    if _adyen_client is None:
+        settings = get_settings()
+        api_key = settings.ADYEN_API_KEY or ""
+        merchant = settings.ADYEN_MERCHANT_ACCOUNT or ""
+        _adyen_client = AdyenClient(api_key=api_key, merchant_account=merchant)
+    return _adyen_client
+
+
+def register_agent_account(
+    agent_id: str,
+    iban: str,
+    bic: str | None = None,
+    active: bool = True,
+) -> None:
+    """Register an agent account for A2A payments (test/seed helper)."""
+    _agent_accounts[agent_id] = {"iban": iban, "bic": bic, "active": active}
+
+
+def set_policy_rules(rules: list[PolicyRuleData]) -> None:
+    """Set the active policy rules for A2A compliance checks."""
+    global _policy_rules
+    _policy_rules = list(rules)
 
 
 # ---------------------------------------------------------------------------
@@ -46,11 +103,7 @@ class A2AState(TypedDict):
 
 
 async def validate_intent(state: A2AState) -> dict[str, Any]:
-    """Check that both agents exist and the amount is valid.
-
-    TODO: Query the agent registry to verify buyer and seller exist,
-    are active, and have valid payment credentials.
-    """
+    """Check that both agents exist, amount is valid, and currency supported."""
     log.info(
         "a2a_agent.validate_intent",
         intent_id=state["intent_id"],
@@ -59,14 +112,16 @@ async def validate_intent(state: A2AState) -> dict[str, Any]:
         amount=state["amount"],
     )
 
+    # Parse and validate amount
     try:
         amount = Decimal(state.get("amount", "0"))
-    except Exception:
+    except (InvalidOperation, TypeError, ValueError):
         return {"error": "Invalid amount format"}
 
     if amount <= Decimal("0"):
         return {"error": "Amount must be positive"}
 
+    # Validate agent IDs
     if not state.get("buyer_agent_id"):
         return {"error": "Buyer agent ID is required"}
 
@@ -76,23 +131,37 @@ async def validate_intent(state: A2AState) -> dict[str, Any]:
     if state["buyer_agent_id"] == state["seller_agent_id"]:
         return {"error": "Buyer and seller cannot be the same agent"}
 
-    # TODO: Verify both agent IDs exist in the agents table
-    # TODO: Check buyer has sufficient balance or credit line
-    # TODO: Validate currency is supported for A2A (EUR only for MVP)
+    # Verify both agents exist in registry
+    buyer_account = _agent_accounts.get(state["buyer_agent_id"])
+    if buyer_account is None:
+        return {"error": f"Buyer agent {state['buyer_agent_id']} not found"}
+
+    if not buyer_account.get("active", False):
+        return {"error": f"Buyer agent {state['buyer_agent_id']} is not active"}
+
+    seller_account = _agent_accounts.get(state["seller_agent_id"])
+    if seller_account is None:
+        return {"error": f"Seller agent {state['seller_agent_id']} not found"}
+
+    if not seller_account.get("active", False):
+        return {"error": f"Seller agent {state['seller_agent_id']} is not active"}
+
+    # Validate currency
+    currency = state.get("currency", "EUR").upper()
+    if currency not in SUPPORTED_CURRENCIES:
+        return {"error": f"Currency {currency} not supported for A2A. Supported: {', '.join(sorted(SUPPORTED_CURRENCIES))}"}
 
     log.info("a2a_agent.intent_valid", intent_id=state["intent_id"])
     return {
+        "seller_iban": seller_account["iban"],
+        "seller_bic": seller_account.get("bic"),
         "messages": state.get("messages", [])
         + [{"role": "system", "content": "A2A intent validated"}],
     }
 
 
 async def compliance_check(state: A2AState) -> dict[str, Any]:
-    """Run the compliance agent for this A2A transaction.
-
-    TODO: Invoke the compliance graph and check the result.  For now
-    this is a pass-through stub.
-    """
+    """Run policy rules for a2a.payment trigger against this transaction."""
     if state.get("error"):
         return {}
 
@@ -103,27 +172,40 @@ async def compliance_check(state: A2AState) -> dict[str, Any]:
         currency=state["currency"],
     )
 
-    # TODO: Invoke compliance_graph from compliance_agent.py
-    # result = await check_compliance(
-    #     transaction_type="a2a_payment",
-    #     customer_id=state["buyer_agent_id"],
-    #     amount=state["amount"],
-    #     currency=state["currency"],
-    # )
-    # if not result.get("is_compliant"):
-    #     return {"error": "Compliance check failed", "compliance_passed": False}
+    # Filter rules for a2a.payment trigger
+    a2a_rules = [r for r in _policy_rules if r.trigger == "a2a.payment"]
+
+    if a2a_rules:
+        context = {
+            "payment": {
+                "amount": Decimal(state["amount"]),
+                "currency": state["currency"],
+                "buyer_agent_id": state["buyer_agent_id"],
+                "seller_agent_id": state["seller_agent_id"],
+                "reason": state.get("reason", ""),
+            },
+        }
+
+        result = _policy_engine.evaluate(context, a2a_rules)
+
+        if result.action == "reject":
+            log.warning(
+                "a2a_agent.compliance_rejected",
+                intent_id=state["intent_id"],
+                rule=result.rule_name,
+                reason=result.reason,
+            )
+            return {
+                "error": f"Compliance check failed: {result.reason}",
+                "compliance_passed": False,
+            }
 
     log.info("a2a_agent.compliance_passed", intent_id=state["intent_id"])
     return {"compliance_passed": True}
 
 
 async def reserve_funds(state: A2AState) -> dict[str, Any]:
-    """Create a debit ledger entry for the buyer.
-
-    TODO: Insert a ``LedgerEntry`` with ``entry_type=DEBIT`` and
-    ``status=PENDING``.  This reserves the funds from the buyer's
-    account balance.
-    """
+    """Create a pending debit+credit pair and verify buyer has sufficient balance."""
     if state.get("error"):
         return {}
 
@@ -134,36 +216,55 @@ async def reserve_funds(state: A2AState) -> dict[str, Any]:
         amount=state["amount"],
     )
 
-    # TODO: Create actual ledger entry via rupiv.billing.ledger
-    # transaction_id = uuid.uuid4()
-    # debit_entry = LedgerEntry(
-    #     transaction_id=transaction_id,
-    #     account_id=state["buyer_agent_id"],
-    #     entry_type=EntryType.DEBIT,
-    #     amount=Decimal(state["amount"]),
-    #     currency=state["currency"],
-    #     status=LedgerStatus.PENDING,
-    #     description=f"A2A: {state['reason']}",
-    #     reference_type="a2a_intent",
-    #     reference_id=state["intent_id"],
-    # )
-    # session.add(debit_entry)
+    amount = Decimal(state["amount"])
 
-    placeholder_debit_id = str(_uuid_mod.uuid4())
+    # Check buyer has sufficient available balance
+    available = await ledger.get_available_balance(state["buyer_agent_id"])
+    if available < amount:
+        log.warning(
+            "a2a_agent.insufficient_balance",
+            intent_id=state["intent_id"],
+            available=str(available),
+            required=str(amount),
+        )
+        return {
+            "error": f"Insufficient balance: available={available}, required={amount}",
+        }
+
+    # Create the pending double-entry transfer
+    transaction_id = await ledger.create_transfer(
+        from_account=state["buyer_agent_id"],
+        to_account=state["seller_agent_id"],
+        amount=amount,
+        currency=state["currency"],
+        description=f"A2A: {state.get('reason', 'agent payment')}",
+    )
+
+    # Retrieve entry IDs for state tracking
+    entries = await ledger.get_entries_by_transaction(transaction_id)
+    debit_id: str | None = None
+    credit_id: str | None = None
+    for entry in entries:
+        if entry.entry_type == ledger.EntryType.DEBIT:
+            debit_id = entry.entry_id
+        elif entry.entry_type == ledger.EntryType.CREDIT:
+            credit_id = entry.entry_id
+
     log.info(
         "a2a_agent.funds_reserved",
         intent_id=state["intent_id"],
-        debit_id=placeholder_debit_id,
+        transaction_id=transaction_id,
+        debit_id=debit_id,
     )
-    return {"ledger_debit_id": placeholder_debit_id}
+    return {
+        "ledger_transaction_id": transaction_id,
+        "ledger_debit_id": debit_id,
+        "ledger_credit_id": credit_id,
+    }
 
 
 async def execute_transfer(state: A2AState) -> dict[str, Any]:
-    """Execute SEPA credit transfer via Adyen.
-
-    TODO: Call Adyen EU SEPA SCT API to initiate the transfer.
-    For MVP this is a stub that simulates a pending transfer.
-    """
+    """Execute SEPA credit transfer via Adyen."""
     if state.get("error"):
         return {}
 
@@ -174,69 +275,102 @@ async def execute_transfer(state: A2AState) -> dict[str, Any]:
         currency=state["currency"],
     )
 
-    # TODO: Integrate with Adyen EU SEPA SCT API
-    # transfer = await adyen_client.create_sepa_transfer(
-    #     amount=Decimal(state["amount"]),
-    #     currency=state["currency"],
-    #     debtor_iban=buyer_iban,
-    #     creditor_iban=seller_iban,
-    #     reference=state["intent_id"],
-    # )
+    seller_iban = state.get("seller_iban", "")
+    seller_bic = state.get("seller_bic")
 
-    placeholder_transfer_id = f"SEPA-{_uuid_mod.uuid4().hex[:12].upper()}"
+    if not seller_iban:
+        return {"error": "Seller IBAN not available"}
+
+    client = get_adyen_client()
+
+    try:
+        transfer: AdyenTransfer = await client.create_sepa_transfer(
+            amount=Decimal(state["amount"]),
+            currency=state["currency"],
+            iban=seller_iban,
+            bic=seller_bic,
+            reference=state["intent_id"],
+            description=f"A2A: {state.get('reason', 'agent payment')}",
+        )
+    except Exception as exc:
+        log.error(
+            "a2a_agent.transfer_error",
+            intent_id=state["intent_id"],
+            error=str(exc),
+        )
+        return {
+            "error": f"SEPA transfer failed: {exc}",
+            "settlement_status": "failed",
+        }
+
     log.info(
         "a2a_agent.transfer_initiated",
         intent_id=state["intent_id"],
-        transfer_id=placeholder_transfer_id,
+        psp_reference=transfer.psp_reference,
+        status=transfer.status,
     )
     return {
-        "transfer_id": placeholder_transfer_id,
-        "settlement_status": "pending",
+        "transfer_id": transfer.psp_reference,
+        "psp_reference": transfer.psp_reference,
+        "settlement_status": "pending" if transfer.status != "Refused" else "failed",
+        "error": f"Transfer refused by Adyen: {transfer.psp_reference}" if transfer.status == "Refused" else None,
     }
 
 
 async def settle(state: A2AState) -> dict[str, Any]:
-    """Credit the seller and update the ledger.
+    """Finalize the ledger based on Adyen transfer result.
 
-    TODO: Create a ``LedgerEntry`` with ``entry_type=CREDIT`` for the
-    seller.  Update both debit and credit entries to ``status=SETTLED``
-    once the SEPA transfer is confirmed (T+1).
+    If Adyen returned ``"Authorised"`` or ``"Pending"``, settle the
+    double-entry transaction.  If ``"Refused"``, reverse the reservation
+    by marking entries as failed.
+
+    SEPA settlement is T+1 in reality; for the graph flow we settle on
+    Authorised and leave webhook-based reconciliation for production.
     """
     if state.get("error"):
-        return {}
+        # If there was a transfer error, reverse the ledger reservation
+        tx_id = state.get("ledger_transaction_id")
+        if tx_id:
+            try:
+                await ledger.fail_transaction(tx_id)
+                log.info(
+                    "a2a_agent.reservation_reversed",
+                    intent_id=state["intent_id"],
+                    transaction_id=tx_id,
+                )
+            except ValueError:
+                pass  # Transaction not found — nothing to reverse
+        return {"settlement_status": "failed"}
 
     log.info(
         "a2a_agent.settle",
         intent_id=state["intent_id"],
         seller=state["seller_agent_id"],
         transfer_id=state.get("transfer_id"),
+        psp_reference=state.get("psp_reference"),
     )
 
-    # TODO: Create credit ledger entry
-    # credit_entry = LedgerEntry(
-    #     transaction_id=debit_entry.transaction_id,
-    #     account_id=state["seller_agent_id"],
-    #     entry_type=EntryType.CREDIT,
-    #     amount=Decimal(state["amount"]),
-    #     currency=state["currency"],
-    #     status=LedgerStatus.PENDING,  # Settled on T+1 via webhook
-    #     description=f"A2A: {state['reason']}",
-    #     reference_type="a2a_intent",
-    #     reference_id=state["intent_id"],
-    # )
-    # session.add(credit_entry)
+    tx_id = state.get("ledger_transaction_id")
+    if not tx_id:
+        return {"error": "No ledger transaction to settle", "settlement_status": "failed"}
 
-    # TODO: Real settlement confirmation comes via Adyen webhook
-    # For MVP stub, mark as settled immediately
-    placeholder_credit_id = str(_uuid_mod.uuid4())
+    # Settle the double-entry transaction (debit + credit both -> SETTLED)
+    try:
+        await ledger.settle_transaction(tx_id)
+    except ValueError as exc:
+        log.error(
+            "a2a_agent.settle_error",
+            intent_id=state["intent_id"],
+            error=str(exc),
+        )
+        return {"error": f"Settlement failed: {exc}", "settlement_status": "failed"}
 
     log.info(
         "a2a_agent.settled",
         intent_id=state["intent_id"],
-        credit_id=placeholder_credit_id,
+        transaction_id=tx_id,
     )
     return {
-        "ledger_credit_id": placeholder_credit_id,
         "settlement_status": "settled",
         "messages": state.get("messages", [])
         + [
@@ -299,7 +433,7 @@ _builder.add_edge("settle", END)
 # Compile with MVP checkpointer
 memory = MemorySaver()
 a2a_graph = _builder.compile(checkpointer=memory)
-"""Compiled A2A settlement graph — invoke with an ``A2AState`` dict."""
+"""Compiled A2A settlement graph -- invoke with an ``A2AState`` dict."""
 
 
 # ---------------------------------------------------------------------------
@@ -335,10 +469,14 @@ async def initiate_a2a_payment(
         "amount": amount,
         "currency": currency,
         "reason": reason,
+        "seller_iban": None,
+        "seller_bic": None,
         "compliance_passed": None,
+        "ledger_transaction_id": None,
         "ledger_debit_id": None,
         "ledger_credit_id": None,
         "transfer_id": None,
+        "psp_reference": None,
         "settlement_status": None,
         "error": None,
         "messages": [],

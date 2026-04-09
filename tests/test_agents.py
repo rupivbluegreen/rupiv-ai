@@ -314,3 +314,162 @@ class TestDunningAgent:
             "messages": [],
         }
         assert _route_after_evaluate(state) == "mark_uncollectible"
+
+
+# =========================================================================
+# Quoting Agent
+# =========================================================================
+
+
+class TestQuotingAgent:
+    """Tests for rupiv.agents.quoting_agent."""
+
+    def test_quoting_graph_compiles(self) -> None:
+        """The quoting agent graph should already be compiled without error."""
+        from rupiv.agents.quoting_agent import quoting_graph
+
+        assert quoting_graph is not None
+
+    def test_quoting_state_schema(self) -> None:
+        """QuotingState should contain the expected keys."""
+        from rupiv.agents.quoting_agent import QuotingState
+
+        annotations = QuotingState.__annotations__
+        expected_keys = {
+            "customer_id",
+            "plan_id",
+            "discount_pct",
+            "term_months",
+            "overrides",
+            "quote_id",
+            "policy_result",
+            "requires_approval",
+            "approval_status",
+            "error",
+            "messages",
+        }
+        found = set(annotations.keys())
+        missing = expected_keys - found
+        assert not missing, f"QuotingState is missing keys: {missing}"
+
+    def test_quoting_nodes_registered(self) -> None:
+        """All expected nodes should be present in the compiled graph."""
+        from rupiv.agents.quoting_agent import quoting_graph
+
+        node_names: set[str] = set(quoting_graph.nodes.keys())
+        expected_nodes = {"load_context", "check_policies", "build_quote", "finalize"}
+        missing = expected_nodes - node_names
+        assert not missing, (
+            f"Quoting graph is missing expected nodes: {missing}. "
+            f"Found: {node_names}"
+        )
+
+
+# =========================================================================
+# Revenue Agent
+# =========================================================================
+
+
+class TestRevenueAgent:
+    """Tests for rupiv.agents.revenue_agent."""
+
+    def test_revenue_graph_compiles(self) -> None:
+        """The revenue agent graph should already be compiled without error."""
+        from rupiv.agents.revenue_agent import revenue_graph
+
+        assert revenue_graph is not None
+
+    def test_revenue_state_schema(self) -> None:
+        """RevenueRecState should contain the expected keys."""
+        from rupiv.agents.revenue_agent import RevenueRecState
+
+        annotations = RevenueRecState.__annotations__
+        expected_keys = {
+            "subscription_id",
+            "obligations",
+            "allocations",
+            "schedule_entries",
+            "journal_entries",
+            "schedule_id",
+            "error",
+            "messages",
+        }
+        found = set(annotations.keys())
+        missing = expected_keys - found
+        assert not missing, f"RevenueRecState is missing keys: {missing}"
+
+    def test_revenue_nodes_registered(self) -> None:
+        """All expected nodes should be present in the compiled graph."""
+        from rupiv.agents.revenue_agent import revenue_graph
+
+        node_names: set[str] = set(revenue_graph.nodes.keys())
+        expected_nodes = {
+            "load_subscription",
+            "identify_obligations",
+            "allocate_prices",
+            "generate_schedules",
+            "generate_journals",
+            "persist_schedule",
+        }
+        missing = expected_nodes - node_names
+        assert not missing, (
+            f"Revenue graph is missing expected nodes: {missing}. "
+            f"Found: {node_names}"
+        )
+
+
+# =========================================================================
+# A2A Agent
+# =========================================================================
+
+
+class TestA2AAgent:
+    """Tests for rupiv.agents.a2a_agent."""
+
+    def test_a2a_graph_compiles(self) -> None:
+        """The A2A agent graph should compile without error."""
+        from rupiv.agents.a2a_agent import a2a_graph
+
+        assert a2a_graph is not None
+
+    def test_a2a_state_schema(self) -> None:
+        """A2AState should contain the expected keys."""
+        from rupiv.agents.a2a_agent import A2AState
+
+        annotations = A2AState.__annotations__
+        expected_keys = {
+            "intent_id",
+            "buyer_agent_id",
+            "seller_agent_id",
+            "amount",
+            "currency",
+            "reason",
+            "compliance_passed",
+            "ledger_debit_id",
+            "ledger_credit_id",
+            "transfer_id",
+            "settlement_status",
+            "error",
+            "messages",
+        }
+        found = set(annotations.keys())
+        missing = expected_keys - found
+        assert not missing, f"A2AState is missing keys: {missing}"
+
+    def test_a2a_nodes_registered(self) -> None:
+        """All expected nodes should be present in the compiled graph."""
+        from rupiv.agents.a2a_agent import a2a_graph
+
+        node_names: set[str] = set(a2a_graph.nodes.keys())
+        expected_nodes = {
+            "validate_intent",
+            "compliance_check",
+            "reserve_funds",
+            "execute_transfer",
+            "settle",
+        }
+        missing = expected_nodes - node_names
+        assert not missing, (
+            f"A2A graph is missing expected nodes: {missing}. "
+            f"Found: {node_names}"
+        )

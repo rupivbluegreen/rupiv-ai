@@ -7,7 +7,17 @@ from typing import Any
 
 import httpx
 
-from .types import CustomerResponse, EventResponse, InvoiceResponse, RupivError
+from .types import (
+    AcceptResponse,
+    CreditBalanceResponse,
+    CustomerResponse,
+    EntityResponse,
+    EventResponse,
+    InvoiceResponse,
+    QuoteResponse,
+    RupivError,
+    SimulationResult,
+)
 
 _DEFAULT_BASE_URL = "https://api.rupiv.ai"
 _DEFAULT_TIMEOUT = 30.0
@@ -113,6 +123,112 @@ class Client:
         data = _handle_response(self._http.get("/v1/invoices", params=params))
         return [InvoiceResponse.model_validate(inv) for inv in data]
 
+    # -- Quotes ----------------------------------------------------------------
+
+    def create_quote(
+        self,
+        customer_id: str,
+        plan_id: str,
+        discount_pct: float = 0,
+        term_months: int = 12,
+        idempotency_key: str | None = None,
+    ) -> QuoteResponse:
+        """Create a new quote for a customer."""
+        payload: dict[str, Any] = {
+            "customer_id": customer_id,
+            "plan_id": plan_id,
+            "discount_pct": discount_pct,
+            "term_months": term_months,
+            "idempotency_key": idempotency_key or str(uuid.uuid4()),
+        }
+        data = _handle_response(self._http.post("/v1/quotes", json=payload))
+        return QuoteResponse.model_validate(data)
+
+    def get_quote(self, quote_id: str) -> QuoteResponse:
+        """Fetch a single quote by ID."""
+        data = _handle_response(self._http.get(f"/v1/quotes/{quote_id}"))
+        return QuoteResponse.model_validate(data)
+
+    def list_quotes(
+        self,
+        customer_id: str | None = None,
+        status: str | None = None,
+    ) -> list[QuoteResponse]:
+        """List quotes, optionally filtered by customer and/or status."""
+        params: dict[str, str] = {}
+        if customer_id is not None:
+            params["customer_id"] = customer_id
+        if status is not None:
+            params["status"] = status
+        data = _handle_response(self._http.get("/v1/quotes", params=params))
+        return [QuoteResponse.model_validate(q) for q in data]
+
+    def send_quote(self, quote_id: str) -> QuoteResponse:
+        """Send a draft quote to the customer."""
+        data = _handle_response(self._http.post(f"/v1/quotes/{quote_id}/send"))
+        return QuoteResponse.model_validate(data)
+
+    def accept_quote(self, quote_id: str) -> AcceptResponse:
+        """Accept a quote, creating a subscription and revenue schedule."""
+        data = _handle_response(self._http.post(f"/v1/quotes/{quote_id}/accept"))
+        return AcceptResponse.model_validate(data)
+
+    def reject_quote(self, quote_id: str, reason: str) -> QuoteResponse:
+        """Reject a quote with a reason."""
+        data = _handle_response(
+            self._http.post(f"/v1/quotes/{quote_id}/reject", json={"reason": reason})
+        )
+        return QuoteResponse.model_validate(data)
+
+    # -- Credits ---------------------------------------------------------------
+
+    def get_credits(self, customer_id: str) -> CreditBalanceResponse:
+        """Fetch a customer's credit balance."""
+        data = _handle_response(self._http.get(f"/v1/credits/{customer_id}/balance"))
+        return CreditBalanceResponse.model_validate(data)
+
+    def purchase_credits(
+        self,
+        customer_id: str,
+        amount: int,
+        idempotency_key: str | None = None,
+    ) -> CreditBalanceResponse:
+        """Purchase credits for a customer."""
+        payload: dict[str, Any] = {
+            "customer_id": customer_id,
+            "amount": amount,
+            "idempotency_key": idempotency_key or str(uuid.uuid4()),
+        }
+        data = _handle_response(self._http.post("/v1/credits/purchase", json=payload))
+        return CreditBalanceResponse.model_validate(data)
+
+    # -- Entities --------------------------------------------------------------
+
+    def list_entities(self) -> list[EntityResponse]:
+        """List all legal entities."""
+        data = _handle_response(self._http.get("/v1/entities"))
+        return [EntityResponse.model_validate(e) for e in data]
+
+    def create_entity(self, data: dict[str, Any]) -> EntityResponse:
+        """Create a new legal entity."""
+        resp = _handle_response(self._http.post("/v1/entities", json=data))
+        return EntityResponse.model_validate(resp)
+
+    # -- Simulation ------------------------------------------------------------
+
+    def simulate_pricing(
+        self,
+        plan_id: str,
+        scenario: dict[str, Any],
+    ) -> SimulationResult:
+        """Run a pricing simulation against historical data."""
+        payload: dict[str, Any] = {
+            "plan_id": plan_id,
+            "scenario": scenario,
+        }
+        data = _handle_response(self._http.post("/v1/simulate", json=payload))
+        return SimulationResult.model_validate(data)
+
     # -- Lifecycle -------------------------------------------------------------
 
     def close(self) -> None:
@@ -184,6 +300,118 @@ class AsyncClient:
             params["customer_id"] = customer_id
         data = _handle_response(await self._http.get("/v1/invoices", params=params))
         return [InvoiceResponse.model_validate(inv) for inv in data]
+
+    # -- Quotes ----------------------------------------------------------------
+
+    async def create_quote(
+        self,
+        customer_id: str,
+        plan_id: str,
+        discount_pct: float = 0,
+        term_months: int = 12,
+        idempotency_key: str | None = None,
+    ) -> QuoteResponse:
+        """Create a new quote for a customer."""
+        payload: dict[str, Any] = {
+            "customer_id": customer_id,
+            "plan_id": plan_id,
+            "discount_pct": discount_pct,
+            "term_months": term_months,
+            "idempotency_key": idempotency_key or str(uuid.uuid4()),
+        }
+        data = _handle_response(await self._http.post("/v1/quotes", json=payload))
+        return QuoteResponse.model_validate(data)
+
+    async def get_quote(self, quote_id: str) -> QuoteResponse:
+        """Fetch a single quote by ID."""
+        data = _handle_response(await self._http.get(f"/v1/quotes/{quote_id}"))
+        return QuoteResponse.model_validate(data)
+
+    async def list_quotes(
+        self,
+        customer_id: str | None = None,
+        status: str | None = None,
+    ) -> list[QuoteResponse]:
+        """List quotes, optionally filtered by customer and/or status."""
+        params: dict[str, str] = {}
+        if customer_id is not None:
+            params["customer_id"] = customer_id
+        if status is not None:
+            params["status"] = status
+        data = _handle_response(await self._http.get("/v1/quotes", params=params))
+        return [QuoteResponse.model_validate(q) for q in data]
+
+    async def send_quote(self, quote_id: str) -> QuoteResponse:
+        """Send a draft quote to the customer."""
+        data = _handle_response(await self._http.post(f"/v1/quotes/{quote_id}/send"))
+        return QuoteResponse.model_validate(data)
+
+    async def accept_quote(self, quote_id: str) -> AcceptResponse:
+        """Accept a quote, creating a subscription and revenue schedule."""
+        data = _handle_response(await self._http.post(f"/v1/quotes/{quote_id}/accept"))
+        return AcceptResponse.model_validate(data)
+
+    async def reject_quote(self, quote_id: str, reason: str) -> QuoteResponse:
+        """Reject a quote with a reason."""
+        data = _handle_response(
+            await self._http.post(
+                f"/v1/quotes/{quote_id}/reject", json={"reason": reason}
+            )
+        )
+        return QuoteResponse.model_validate(data)
+
+    # -- Credits ---------------------------------------------------------------
+
+    async def get_credits(self, customer_id: str) -> CreditBalanceResponse:
+        """Fetch a customer's credit balance."""
+        data = _handle_response(
+            await self._http.get(f"/v1/credits/{customer_id}/balance")
+        )
+        return CreditBalanceResponse.model_validate(data)
+
+    async def purchase_credits(
+        self,
+        customer_id: str,
+        amount: int,
+        idempotency_key: str | None = None,
+    ) -> CreditBalanceResponse:
+        """Purchase credits for a customer."""
+        payload: dict[str, Any] = {
+            "customer_id": customer_id,
+            "amount": amount,
+            "idempotency_key": idempotency_key or str(uuid.uuid4()),
+        }
+        data = _handle_response(
+            await self._http.post("/v1/credits/purchase", json=payload)
+        )
+        return CreditBalanceResponse.model_validate(data)
+
+    # -- Entities --------------------------------------------------------------
+
+    async def list_entities(self) -> list[EntityResponse]:
+        """List all legal entities."""
+        data = _handle_response(await self._http.get("/v1/entities"))
+        return [EntityResponse.model_validate(e) for e in data]
+
+    async def create_entity(self, data: dict[str, Any]) -> EntityResponse:
+        """Create a new legal entity."""
+        resp = _handle_response(await self._http.post("/v1/entities", json=data))
+        return EntityResponse.model_validate(resp)
+
+    # -- Simulation ------------------------------------------------------------
+
+    async def simulate_pricing(
+        self,
+        plan_id: str,
+        scenario: dict[str, Any],
+    ) -> SimulationResult:
+        """Run a pricing simulation against historical data."""
+        payload: dict[str, Any] = {
+            "plan_id": plan_id,
+            "scenario": scenario,
+        }
+        data = _handle_response(await self._http.post("/v1/simulate", json=payload))
+        return SimulationResult.model_validate(data)
 
     # -- Lifecycle -------------------------------------------------------------
 

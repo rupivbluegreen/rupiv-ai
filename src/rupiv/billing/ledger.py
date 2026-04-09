@@ -177,3 +177,66 @@ async def settle_transaction(transaction_id: str) -> None:
         entry.status = EntryStatus.SETTLED
 
     log.info("ledger.transaction_settled", transaction_id=transaction_id)
+
+
+async def fail_transaction(transaction_id: str) -> None:
+    """Mark all entries belonging to *transaction_id* as failed.
+
+    Used when a payment is refused or reversed.
+
+    Raises:
+        ValueError: If the transaction is not found.
+    """
+    entries = [e for e in _entries if e.transaction_id == transaction_id]
+
+    if not entries:
+        raise ValueError(f"Transaction {transaction_id} not found")
+
+    for entry in entries:
+        entry.status = EntryStatus.FAILED
+
+    log.info("ledger.transaction_failed", transaction_id=transaction_id)
+
+
+async def get_entries_by_transaction(transaction_id: str) -> list[LedgerEntry]:
+    """Return all entries for a given *transaction_id*."""
+    return [e for e in _entries if e.transaction_id == transaction_id]
+
+
+async def get_entries_by_account(account_id: str) -> list[LedgerEntry]:
+    """Return all entries for a given *account_id*, newest first."""
+    entries = [e for e in _entries if e.account_id == account_id]
+    return sorted(entries, key=lambda e: e.created_at, reverse=True)
+
+
+async def get_recent_entries(limit: int = 50) -> list[LedgerEntry]:
+    """Return the most recent ledger entries across all accounts."""
+    sorted_entries = sorted(_entries, key=lambda e: e.created_at, reverse=True)
+    return sorted_entries[:limit]
+
+
+async def get_available_balance(account_id: str) -> Decimal:
+    """Return the available balance for *account_id*.
+
+    Available = settled balance minus pending debits.  This is the amount
+    that can be reserved for new transfers.
+    """
+    settled = await get_balance(account_id)
+
+    pending_debits = sum(
+        (e.amount for e in _entries
+         if e.account_id == account_id
+         and e.entry_type == EntryType.DEBIT
+         and e.status == EntryStatus.PENDING),
+        Decimal("0"),
+    )
+
+    available = settled - pending_debits
+    log.debug(
+        "ledger.available_balance",
+        account_id=account_id,
+        settled=str(settled),
+        pending_debits=str(pending_debits),
+        available=str(available),
+    )
+    return available

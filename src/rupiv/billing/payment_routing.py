@@ -10,6 +10,7 @@ from rupiv.analytics.routing_optimizer import (
     DEFAULT_PSP,
     PSP_FEE_SCHEDULES,
     PSPRoute,
+    STRIPE_PREFERRED_COUNTRIES,
     find_cheapest_route,
 )
 
@@ -63,8 +64,9 @@ def route_payment(
         )
 
     # If the selected PSP is not Mollie and Mollie would be equally cheap,
-    # prefer Mollie as the established provider.
-    if route.psp != DEFAULT_PSP:
+    # prefer Mollie as the established provider — but not for countries
+    # where Stripe is the preferred regional PSP.
+    if route.psp != DEFAULT_PSP and country_code not in STRIPE_PREFERRED_COUNTRIES:
         mollie_methods = PSP_FEE_SCHEDULES.get(DEFAULT_PSP, {})
         if route.method in mollie_methods:
             mollie_schedule = mollie_methods[route.method]

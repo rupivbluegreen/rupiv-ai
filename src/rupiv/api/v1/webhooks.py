@@ -6,7 +6,8 @@ import structlog
 from fastapi import APIRouter, Depends, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from rupiv.billing.payment import MollieClient, process_webhook
+from rupiv.billing.payment import MollieClient, process_stripe_webhook, process_webhook
+from rupiv.billing.stripe_client import StripeClient
 from rupiv.config import get_settings
 from rupiv.db import get_db
 
@@ -73,5 +74,71 @@ async def mollie_webhook(
         # The error is logged for investigation.
     finally:
         await mollie.close()
+
+    return Response(status_code=status.HTTP_200_OK)
+
+
+def _get_stripe_client() -> StripeClient:
+    """Build a StripeClient from application settings."""
+    settings = get_settings()
+    api_key = settings.STRIPE_API_KEY
+    if not api_key:
+        raise RuntimeError("STRIPE_API_KEY is not configured")
+    return StripeClient(api_key=api_key)
+
+
+@router.post(
+    "/stripe",
+    status_code=status.HTTP_200_OK,
+    summary="Handle Stripe payment webhook",
+)
+async def stripe_webhook(
+    request: Request,
+    session: AsyncSession = Depends(get_db),
+) -> Response:
+    """Process incoming Stripe webhook event.
+
+    Stripe sends ``POST`` requests with a JSON body.  The
+    ``Stripe-Signature`` header is used to verify authenticity via
+    HMAC SHA-256.  We must always return **200 OK** to acknowledge
+    receipt; any other status causes Stripe to retry.
+    """
+    settings = get_settings()
+    webhook_secret = settings.STRIPE_WEBHOOK_SECRET
+    if not webhook_secret:
+        logger.error("stripe_webhook_secret_not_configured")
+        return Response(status_code=status.HTTP_200_OK)
+
+    payload = await request.body()
+    signature = request.headers.get("Stripe-Signature", "")
+
+    if not signature:
+        logger.warning("stripe_webhook_missing_signature")
+        return Response(status_code=status.HTTP_200_OK)
+
+    logger.info("stripe_webhook_received")
+
+    stripe = _get_stripe_client()
+    try:
+        invoice = await process_stripe_webhook(
+            stripe, session, payload, signature, webhook_secret
+        )
+
+        if invoice is not None:
+            logger.info(
+                "stripe_webhook_processed",
+                invoice_id=str(invoice.id),
+                invoice_status=invoice.status.value
+                if hasattr(invoice.status, "value")
+                else str(invoice.status),
+            )
+        else:
+            logger.info("stripe_webhook_no_invoice")
+    except ValueError:
+        logger.warning("stripe_webhook_invalid_signature")
+    except Exception:
+        logger.exception("stripe_webhook_error")
+    finally:
+        await stripe.close()
 
     return Response(status_code=status.HTTP_200_OK)

@@ -15,7 +15,7 @@ ALEMBIC := uv run alembic
 # Targets
 # ---------------------------------------------------------------------------
 
-.PHONY: help dev test lint format migrate migration seed sdk-build docker-build deploy
+.PHONY: help dev test lint format migrate migration seed seed-simulate vat-update sdk-build docker-build deploy
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -44,6 +44,13 @@ migration: ## Create a new migration (usage: make migration msg="add users table
 
 seed: ## Seed the database with sample data
 	$(PYTHON) -m rupiv.seed
+
+seed-simulate: ## Seed data + run a pricing simulation demo
+	$(PYTHON) -m rupiv.seed
+	$(PYTHON) -c "from rupiv.pricing_studio.templates import get_templates; print(f'Loaded {len(get_templates())} templates')"
+
+vat-update: ## Refresh EU VAT rates (placeholder)
+	$(PYTHON) -c "from rupiv.tax.rates import EU_VAT_RATES; print(f'EU VAT rates loaded: {len(EU_VAT_RATES)} countries')"
 
 sdk-build: ## Build the client SDK package
 	cd sdk && npm run build

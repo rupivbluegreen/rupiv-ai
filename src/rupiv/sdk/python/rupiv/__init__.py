@@ -2,23 +2,40 @@
 
 from .client import AsyncClient, Client
 from .events import EventBatcher
+from .quotes import AsyncQuoteClient, QuoteClient
 from .types import (
+    AcceptResponse,
+    CreditBalanceResponse,
     CustomerResponse,
+    EntityResponse,
     EventResponse,
     InvoiceResponse,
     PlanResponse,
+    QuoteLineItemResponse,
+    QuoteResponse,
+    RevenueScheduleResponse,
     RupivError,
+    SimulationResult,
 )
 
 __all__ = [
+    "AcceptResponse",
     "AsyncClient",
+    "AsyncQuoteClient",
     "Client",
+    "CreditBalanceResponse",
     "CustomerResponse",
+    "EntityResponse",
     "EventBatcher",
     "EventResponse",
     "InvoiceResponse",
     "PlanResponse",
+    "QuoteClient",
+    "QuoteLineItemResponse",
+    "QuoteResponse",
+    "RevenueScheduleResponse",
     "RupivError",
+    "SimulationResult",
     "track_event",
     "track_outcome",
 ]

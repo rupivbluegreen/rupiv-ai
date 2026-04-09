@@ -1,18 +1,32 @@
-"""Agent-to-Agent (A2A) payment intent endpoint."""
+"""Agent-to-Agent (A2A) payment intent endpoints.
+
+Provides endpoints for creating A2A payment intents (which invoke the
+LangGraph settlement agent), listing recent transactions, retrieving
+transaction details, and querying account balances.
+"""
 
 from __future__ import annotations
 
 import uuid
 from decimal import Decimal
 from enum import Enum
+from typing import Any
 
 import structlog
-from fastapi import APIRouter, status
+from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
-logger: structlog.stdlib.BoundLogger = structlog.get_logger()
+from rupiv.agents.a2a_agent import initiate_a2a_payment
+from rupiv.billing import ledger
+
+logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/a2a", tags=["a2a"])
+
+
+# ---------------------------------------------------------------------------
+# Schemas
+# ---------------------------------------------------------------------------
 
 
 class A2AIntentStatus(str, Enum):
@@ -22,6 +36,7 @@ class A2AIntentStatus(str, Enum):
     APPROVED = "approved"
     SETTLED = "settled"
     REJECTED = "rejected"
+    FAILED = "failed"
 
 
 class A2AIntentCreate(BaseModel):
@@ -38,8 +53,80 @@ class A2AIntentCreate(BaseModel):
 class A2AIntentResponse(BaseModel):
     """Response after creating an A2A payment intent."""
 
-    intent_id: uuid.UUID
+    intent_id: str
     status: A2AIntentStatus
+    settlement_status: str | None = None
+    ledger_transaction_id: str | None = None
+    psp_reference: str | None = None
+    error: str | None = None
+
+
+class LedgerEntryResponse(BaseModel):
+    """Serialised ledger entry for API responses."""
+
+    entry_id: str
+    transaction_id: str
+    account_id: str
+    entry_type: str
+    amount: str
+    currency: str
+    description: str
+    status: str
+    created_at: str
+
+
+class BalanceResponse(BaseModel):
+    """Account balance response."""
+
+    account_id: str
+    settled_balance: str
+    available_balance: str
+    currency: str
+
+
+class TransactionDetailResponse(BaseModel):
+    """Detail view of a ledger transaction (debit + credit pair)."""
+
+    transaction_id: str
+    entries: list[LedgerEntryResponse]
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _entry_to_response(entry: ledger.LedgerEntry) -> LedgerEntryResponse:
+    """Convert an in-memory LedgerEntry to API response model."""
+    return LedgerEntryResponse(
+        entry_id=entry.entry_id,
+        transaction_id=entry.transaction_id,
+        account_id=entry.account_id,
+        entry_type=entry.entry_type.value,
+        amount=str(entry.amount),
+        currency=entry.currency,
+        description=entry.description,
+        status=entry.status.value,
+        created_at=entry.created_at.isoformat(),
+    )
+
+
+def _map_settlement_to_intent_status(settlement: str | None, error: str | None) -> A2AIntentStatus:
+    """Map the agent graph settlement_status to an API-level intent status."""
+    if error:
+        return A2AIntentStatus.FAILED
+    if settlement == "settled":
+        return A2AIntentStatus.SETTLED
+    if settlement == "pending":
+        return A2AIntentStatus.PENDING
+    if settlement == "failed":
+        return A2AIntentStatus.FAILED
+    return A2AIntentStatus.PENDING
+
+
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
 
 
 @router.post(
@@ -49,20 +136,97 @@ class A2AIntentResponse(BaseModel):
     summary="Create an agent-to-agent payment intent",
 )
 async def create_a2a_intent(payload: A2AIntentCreate) -> A2AIntentResponse:
-    """Create a new A2A payment intent for SEPA settlement.
+    """Create a new A2A payment intent and run the settlement agent graph.
 
-    The compliance agent will verify GDPR/KYC constraints, reserve funds
-    from the buyer ledger, and initiate SEPA credit transfer via Adyen.
+    The compliance agent verifies policy rules, reserves funds from the
+    buyer ledger, initiates SEPA credit transfer via Adyen, and settles
+    the double-entry transaction on success.
     """
-    intent_id = uuid.uuid4()
     logger.info(
         "a2a_intent_created",
-        intent_id=str(intent_id),
         from_agent=str(payload.from_agent_id),
         to_agent=str(payload.to_agent_id),
         amount=str(payload.amount),
         currency=payload.currency,
         reason=payload.reason,
     )
-    # TODO: Enqueue for compliance_agent + ledger reservation
-    return A2AIntentResponse(intent_id=intent_id, status=A2AIntentStatus.PENDING)
+
+    result = await initiate_a2a_payment(
+        buyer_agent_id=str(payload.from_agent_id),
+        seller_agent_id=str(payload.to_agent_id),
+        amount=str(payload.amount),
+        currency=payload.currency,
+        reason=payload.reason,
+    )
+
+    intent_status = _map_settlement_to_intent_status(
+        result.get("settlement_status"),
+        result.get("error"),
+    )
+
+    return A2AIntentResponse(
+        intent_id=result.get("intent_id", ""),
+        status=intent_status,
+        settlement_status=result.get("settlement_status"),
+        ledger_transaction_id=result.get("ledger_transaction_id"),
+        psp_reference=result.get("psp_reference"),
+        error=result.get("error"),
+    )
+
+
+@router.get(
+    "/intents",
+    response_model=list[LedgerEntryResponse],
+    summary="List recent A2A transactions",
+)
+async def list_a2a_intents(limit: int = 50) -> list[LedgerEntryResponse]:
+    """List recent A2A ledger entries (most recent first).
+
+    Returns the raw double-entry ledger entries. Each A2A transaction
+    produces a debit + credit pair sharing the same ``transaction_id``.
+    """
+    entries = await ledger.get_recent_entries(limit=limit)
+    return [_entry_to_response(e) for e in entries]
+
+
+@router.get(
+    "/intents/{transaction_id}",
+    response_model=TransactionDetailResponse,
+    summary="Get A2A transaction details",
+)
+async def get_a2a_intent(transaction_id: str) -> TransactionDetailResponse:
+    """Retrieve the debit + credit entries for a specific transaction."""
+    entries = await ledger.get_entries_by_transaction(transaction_id)
+    if not entries:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Transaction {transaction_id} not found",
+        )
+
+    return TransactionDetailResponse(
+        transaction_id=transaction_id,
+        entries=[_entry_to_response(e) for e in entries],
+    )
+
+
+@router.get(
+    "/balance/{account_id}",
+    response_model=BalanceResponse,
+    summary="Get account balance",
+)
+async def get_account_balance(account_id: str) -> BalanceResponse:
+    """Return the settled and available balance for an agent account.
+
+    - ``settled_balance``: Sum of settled credits minus settled debits.
+    - ``available_balance``: Settled balance minus pending debits (funds
+      that are reserved but not yet settled).
+    """
+    settled = await ledger.get_balance(account_id)
+    available = await ledger.get_available_balance(account_id)
+
+    return BalanceResponse(
+        account_id=account_id,
+        settled_balance=str(settled),
+        available_balance=str(available),
+        currency="EUR",
+    )

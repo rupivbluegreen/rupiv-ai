@@ -51,6 +51,11 @@ PSP_FEE_SCHEDULES: dict[str, dict[str, dict[str, Decimal]]] = {
         "card": {"fixed": Decimal("0.20"), "rate_pct": Decimal("2.2")},
         "sepa_dd": {"fixed": Decimal("0.30"), "rate_pct": Decimal("0")},
     },
+    "stripe": {
+        "card": {"fixed": Decimal("0.30"), "rate_pct": Decimal("2.9")},
+        "ach": {"fixed": Decimal("0.00"), "rate_pct": Decimal("0.8"), "cap": Decimal("5.00")},
+        "sepa_dd": {"fixed": Decimal("0.50"), "rate_pct": Decimal("0")},
+    },
 }
 
 # Default PSP when no better option is found
@@ -65,7 +70,11 @@ COUNTRY_PREFERRED_METHODS: dict[str, str] = {
     "FR": "card",
     "ES": "card",
     "IT": "card",
+    "US": "card",
 }
+
+# Countries where Stripe is the preferred PSP (US expansion)
+STRIPE_PREFERRED_COUNTRIES: set[str] = {"US"}
 
 
 # ---------------------------------------------------------------------------
@@ -74,10 +83,21 @@ COUNTRY_PREFERRED_METHODS: dict[str, str] = {
 
 
 def _estimate_fee(amount: Decimal, schedule: dict[str, Decimal]) -> Decimal:
-    """Calculate estimated fee from a fee schedule entry."""
+    """Calculate estimated fee from a fee schedule entry.
+
+    Supports an optional ``cap`` key for methods like ACH where the
+    percentage-based fee is capped at a maximum amount.
+    """
     fixed = schedule["fixed"]
     rate = schedule["rate_pct"]
-    return (fixed + amount * rate / Decimal("100")).quantize(Decimal("0.0001"))
+    variable = amount * rate / Decimal("100")
+
+    # Apply cap if present (e.g. ACH capped at $5.00)
+    cap = schedule.get("cap")
+    if cap is not None and variable > cap:
+        variable = cap
+
+    return (fixed + variable).quantize(Decimal("0.0001"))
 
 
 def _estimate_rate(amount: Decimal, fee: Decimal) -> Decimal:
@@ -105,6 +125,11 @@ def find_cheapest_route(
     """
     method = payment_method or COUNTRY_PREFERRED_METHODS.get(country_code, "card")
 
+    # For US customers, prefer Stripe as the regional PSP
+    preferred_psp: str | None = None
+    if country_code in STRIPE_PREFERRED_COUNTRIES:
+        preferred_psp = "stripe"
+
     best_psp: str | None = None
     best_fee: Decimal | None = None
     best_schedule: dict[str, Decimal] | None = None
@@ -118,6 +143,19 @@ def find_cheapest_route(
             best_psp = psp
             best_fee = fee
             best_schedule = schedule
+
+    # If a regional PSP is preferred and supports the method, use it
+    # (even if not strictly cheapest) to ensure correct regional coverage.
+    if (
+        preferred_psp is not None
+        and preferred_psp in PSP_FEE_SCHEDULES
+        and method in PSP_FEE_SCHEDULES[preferred_psp]
+    ):
+        pref_schedule = PSP_FEE_SCHEDULES[preferred_psp][method]
+        pref_fee = _estimate_fee(amount, pref_schedule)
+        best_psp = preferred_psp
+        best_fee = pref_fee
+        best_schedule = pref_schedule
 
     # Fallback to default PSP with card if nothing matched
     if best_psp is None:

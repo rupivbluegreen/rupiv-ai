@@ -517,6 +517,100 @@ export function fetchPolicies(): Promise<PolicyRule[]> {
   return safeRequest<PolicyRule[]>('/policies', []);
 }
 
+// --- Onboarding Types ---
+
+export interface SignupInput {
+  company_name: string;
+  email: string;
+  country_code?: string;
+  is_business?: boolean;
+  vat_number?: string | null;
+}
+
+export interface SignupResult {
+  customer_id: string;
+  subscription_id: string;
+  api_key: string;
+  dashboard_url: string;
+}
+
+export interface SetupBillingInput {
+  customer_id: string;
+  payment_provider?: string;
+  return_url: string;
+}
+
+export interface SetupBillingResult {
+  redirect_url: string;
+}
+
+export interface OnboardingStatusResult {
+  has_customer: boolean;
+  has_subscription: boolean;
+  has_api_key: boolean;
+  has_payment_method: boolean;
+  has_first_event: boolean;
+  completion_pct: number;
+}
+
+export interface UpgradeInput {
+  customer_id: string;
+  plan_id: string;
+}
+
+export interface UpgradeResult {
+  old_subscription_id: string;
+  new_subscription_id: string;
+  plan_id: string;
+}
+
+// --- Onboarding API Functions ---
+
+export function onboardingSignup(data: SignupInput): Promise<SignupResult> {
+  return request<SignupResult>('/onboarding/signup', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export function onboardingSetupBilling(data: SetupBillingInput): Promise<SetupBillingResult> {
+  return request<SetupBillingResult>('/onboarding/setup-billing', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export function onboardingStatus(customerId: string): Promise<OnboardingStatusResult> {
+  return request<OnboardingStatusResult>(`/onboarding/status/${customerId}`);
+}
+
+export function onboardingUpgrade(data: UpgradeInput): Promise<UpgradeResult> {
+  return request<UpgradeResult>('/onboarding/upgrade', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export interface SendTestEventInput {
+  type: 'usage' | 'outcome';
+  metric: string;
+  customer_id: string;
+  properties: Record<string, unknown>;
+  idempotency_key: string;
+}
+
+export interface SendTestEventResult {
+  event_id: string;
+  status: string;
+}
+
+export function sendTestEvent(data: SendTestEventInput): Promise<SendTestEventResult> {
+  return request<SendTestEventResult>('/events', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
 // --- Overview Stats ---
 
 export async function fetchOverviewStats(): Promise<OverviewStats> {
