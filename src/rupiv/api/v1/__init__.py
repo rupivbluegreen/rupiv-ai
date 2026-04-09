@@ -5,10 +5,12 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from rupiv.api.v1.a2a import router as a2a_router
+from rupiv.api.v1.compliance import router as compliance_router
 from rupiv.api.v1.analytics import router as analytics_router
 from rupiv.api.v1.api_keys import router as api_keys_router
 from rupiv.api.v1.credits import router as credits_router
 from rupiv.api.v1.customers import router as customers_router
+from rupiv.api.v1.docs import router as docs_router
 from rupiv.api.v1.entities import router as entities_router
 from rupiv.api.v1.events import router as events_router
 from rupiv.api.v1.invoices import router as invoices_router
@@ -39,3 +41,5 @@ v1_router.include_router(revenue_router)
 v1_router.include_router(simulate_router)
 v1_router.include_router(stream_router)
 v1_router.include_router(onboarding_router)
+v1_router.include_router(compliance_router)
+v1_router.include_router(docs_router)

@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any
 
 import httpx
-import pytest
 
 
 async def test_entity_hierarchy(client: httpx.AsyncClient) -> None:
@@ -29,7 +28,9 @@ async def test_entity_hierarchy(client: httpx.AsyncClient) -> None:
         "vat_number": "NL001234567B01",
     }
     resp = await client.post("/v1/entities", json=parent_payload)
-    assert resp.status_code == 201, f"Expected 201 creating parent entity, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 201, (
+        f"Expected 201 creating parent entity, got {resp.status_code}: {resp.text}"
+    )
 
     parent_data: dict[str, Any] = resp.json()
     parent_id: str = parent_data["id"]
@@ -56,7 +57,9 @@ async def test_entity_hierarchy(client: httpx.AsyncClient) -> None:
         "vat_number": "DE987654321",
     }
     resp = await client.post("/v1/entities", json=child_payload)
-    assert resp.status_code == 201, f"Expected 201 creating child entity, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 201, (
+        f"Expected 201 creating child entity, got {resp.status_code}: {resp.text}"
+    )
 
     child_data: dict[str, Any] = resp.json()
     child_id: str = child_data["id"]
@@ -117,7 +120,9 @@ async def test_entity_hierarchy(client: httpx.AsyncClient) -> None:
     # 5. List entities -> verify both present
     # ------------------------------------------------------------------
     resp = await client.get("/v1/entities")
-    assert resp.status_code == 200, f"Expected 200 listing entities, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 200, (
+        f"Expected 200 listing entities, got {resp.status_code}: {resp.text}"
+    )
 
     list_data: dict[str, Any] = resp.json()
     assert list_data["total"] >= 2, "Should have at least 2 entities"

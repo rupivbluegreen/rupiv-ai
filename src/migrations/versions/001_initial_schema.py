@@ -7,12 +7,11 @@ Create Date: 2026-04-09
 
 from __future__ import annotations
 
-from typing import Sequence
+from collections.abc import Sequence
 
 import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
-
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = "001_initial"
@@ -30,7 +29,13 @@ def upgrade() -> None:
     op.create_table(
         "customers",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
-        sa.Column("external_id", sa.String(255), unique=True, nullable=False, comment="Caller-supplied unique identifier"),
+        sa.Column(
+            "external_id",
+            sa.String(255),
+            unique=True,
+            nullable=False,
+            comment="Caller-supplied unique identifier",
+        ),
         sa.Column("name", sa.String(255), nullable=False),
         sa.Column("email", sa.String(255), nullable=False),
         sa.Column("billing_email", sa.String(255), nullable=True),
@@ -68,14 +73,49 @@ def upgrade() -> None:
     op.create_table(
         "pricing_rules",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
-        sa.Column("plan_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("plans.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("pricing_model", sa.String(50), nullable=False, comment="flat | usage | outcome | tiered | credit | hybrid"),
-        sa.Column("metric", sa.String(255), nullable=True, comment="Event metric name, e.g. ticket_resolved"),
-        sa.Column("unit_amount", sa.Numeric(19, 4), nullable=True, comment="Per-unit price (usage/outcome models)"),
+        sa.Column(
+            "plan_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("plans.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
+        sa.Column(
+            "pricing_model",
+            sa.String(50),
+            nullable=False,
+            comment="flat | usage | outcome | tiered | credit | hybrid",
+        ),
+        sa.Column(
+            "metric",
+            sa.String(255),
+            nullable=True,
+            comment="Event metric name, e.g. ticket_resolved",
+        ),
+        sa.Column(
+            "unit_amount",
+            sa.Numeric(19, 4),
+            nullable=True,
+            comment="Per-unit price (usage/outcome models)",
+        ),
         sa.Column("currency", sa.String(3), nullable=False, server_default=sa.text("'EUR'")),
-        sa.Column("tiers", postgresql.JSONB(astext_type=sa.Text()), nullable=True, comment="Tiered pricing brackets"),
-        sa.Column("outcome_rules", postgresql.JSONB(astext_type=sa.Text()), nullable=True, comment="billable_when conditions, cap_per_period"),
-        sa.Column("flat_amount", sa.Numeric(19, 4), nullable=True, comment="Fixed recurring charge (flat/hybrid models)"),
+        sa.Column(
+            "tiers",
+            postgresql.JSONB(astext_type=sa.Text()),
+            nullable=True,
+            comment="Tiered pricing brackets",
+        ),
+        sa.Column(
+            "outcome_rules",
+            postgresql.JSONB(astext_type=sa.Text()),
+            nullable=True,
+            comment="billable_when conditions, cap_per_period",
+        ),
+        sa.Column(
+            "flat_amount",
+            sa.Numeric(19, 4),
+            nullable=True,
+            comment="Fixed recurring charge (flat/hybrid models)",
+        ),
         sa.Column("billing_interval", sa.String(50), nullable=True, comment="monthly | yearly"),
         sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
         sa.Column("updated_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
@@ -90,8 +130,18 @@ def upgrade() -> None:
     op.create_table(
         "subscriptions",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
-        sa.Column("customer_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("customers.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("plan_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("plans.id", ondelete="RESTRICT"), nullable=False),
+        sa.Column(
+            "customer_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("customers.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
+        sa.Column(
+            "plan_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("plans.id", ondelete="RESTRICT"),
+            nullable=False,
+        ),
         sa.Column("status", sa.String(50), nullable=False, server_default=sa.text("'active'")),
         sa.Column("current_period_start", sa.DateTime(timezone=True), nullable=False),
         sa.Column("current_period_end", sa.DateTime(timezone=True), nullable=False),
@@ -110,14 +160,43 @@ def upgrade() -> None:
     op.create_table(
         "events",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
-        sa.Column("customer_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("customers.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("subscription_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("subscriptions.id", ondelete="SET NULL"), nullable=True),
+        sa.Column(
+            "customer_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("customers.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
+        sa.Column(
+            "subscription_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("subscriptions.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
         sa.Column("event_type", sa.String(50), nullable=False),
-        sa.Column("metric", sa.String(255), nullable=False, comment="Metric name, e.g. api_call, ticket_resolved"),
+        sa.Column(
+            "metric",
+            sa.String(255),
+            nullable=False,
+            comment="Metric name, e.g. api_call, ticket_resolved",
+        ),
         sa.Column("properties", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-        sa.Column("idempotency_key", sa.String(255), unique=True, nullable=False, comment="Caller-supplied dedup key"),
-        sa.Column("outcome_status", sa.String(50), nullable=True, comment="Set only for outcome events"),
-        sa.Column("timestamp", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now(), comment="When the event actually occurred"),
+        sa.Column(
+            "idempotency_key",
+            sa.String(255),
+            unique=True,
+            nullable=False,
+            comment="Caller-supplied dedup key",
+        ),
+        sa.Column(
+            "outcome_status", sa.String(50), nullable=True, comment="Set only for outcome events",
+        ),
+        sa.Column(
+            "timestamp",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.func.now(),
+            comment="When the event actually occurred",
+        ),
         sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
         sa.Column("updated_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
         sa.PrimaryKeyConstraint("id", name="pk_events"),
@@ -135,8 +214,18 @@ def upgrade() -> None:
     op.create_table(
         "invoices",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
-        sa.Column("customer_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("customers.id", ondelete="RESTRICT"), nullable=False),
-        sa.Column("subscription_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("subscriptions.id", ondelete="RESTRICT"), nullable=False),
+        sa.Column(
+            "customer_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("customers.id", ondelete="RESTRICT"),
+            nullable=False,
+        ),
+        sa.Column(
+            "subscription_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("subscriptions.id", ondelete="RESTRICT"),
+            nullable=False,
+        ),
         sa.Column("invoice_number", sa.String(50), unique=True, nullable=False),
         sa.Column("status", sa.String(50), nullable=False, server_default=sa.text("'draft'")),
         sa.Column("subtotal", sa.Numeric(19, 4), nullable=False),
@@ -166,13 +255,23 @@ def upgrade() -> None:
     op.create_table(
         "invoice_line_items",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
-        sa.Column("invoice_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("invoices.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "invoice_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("invoices.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("description", sa.Text(), nullable=False),
         sa.Column("quantity", sa.Numeric(19, 4), nullable=False),
         sa.Column("unit_amount", sa.Numeric(19, 4), nullable=False),
         sa.Column("amount", sa.Numeric(19, 4), nullable=False),
         sa.Column("metric", sa.String(255), nullable=True),
-        sa.Column("pricing_model", sa.String(50), nullable=True, comment="flat | usage | outcome | tiered | credit | hybrid"),
+        sa.Column(
+            "pricing_model",
+            sa.String(50),
+            nullable=True,
+            comment="flat | usage | outcome | tiered | credit | hybrid",
+        ),
         sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
         sa.Column("updated_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
         sa.PrimaryKeyConstraint("id", name="pk_invoice_line_items"),
@@ -185,14 +284,29 @@ def upgrade() -> None:
     op.create_table(
         "ledger_entries",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
-        sa.Column("transaction_id", postgresql.UUID(as_uuid=True), nullable=False, comment="Groups the debit + credit pair"),
-        sa.Column("account_id", postgresql.UUID(as_uuid=True), nullable=False, comment="Agent or customer account UUID"),
+        sa.Column(
+            "transaction_id",
+            postgresql.UUID(as_uuid=True),
+            nullable=False,
+            comment="Groups the debit + credit pair",
+        ),
+        sa.Column(
+            "account_id",
+            postgresql.UUID(as_uuid=True),
+            nullable=False,
+            comment="Agent or customer account UUID",
+        ),
         sa.Column("entry_type", sa.String(50), nullable=False),
         sa.Column("amount", sa.Numeric(19, 4), nullable=False),
         sa.Column("currency", sa.String(3), nullable=False, server_default=sa.text("'EUR'")),
         sa.Column("status", sa.String(50), nullable=False, server_default=sa.text("'pending'")),
         sa.Column("description", sa.Text(), nullable=True),
-        sa.Column("reference_type", sa.String(50), nullable=True, comment="e.g. invoice, a2a_intent, refund"),
+        sa.Column(
+            "reference_type",
+            sa.String(50),
+            nullable=True,
+            comment="e.g. invoice, a2a_intent, refund",
+        ),
         sa.Column("reference_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
         sa.Column("updated_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
@@ -201,7 +315,9 @@ def upgrade() -> None:
     op.create_index("ix_ledger_entries_transaction_id", "ledger_entries", ["transaction_id"])
     op.create_index("ix_ledger_entries_account_id", "ledger_entries", ["account_id"])
     op.create_index("ix_ledger_entries_status", "ledger_entries", ["status"])
-    op.create_index("ix_ledger_entries_reference", "ledger_entries", ["reference_type", "reference_id"])
+    op.create_index(
+        "ix_ledger_entries_reference", "ledger_entries", ["reference_type", "reference_id"],
+    )
 
 
 def downgrade() -> None:

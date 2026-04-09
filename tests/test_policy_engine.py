@@ -7,7 +7,7 @@ threshold checks, YAML/JSON parsing, and the approval lifecycle.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -20,31 +20,35 @@ from rupiv.policy.approvals import (
     resolve_approval,
 )
 from rupiv.policy.engine import Condition, PolicyEngine, PolicyResult, PolicyRuleData
-from rupiv.policy.rules import evaluate_condition, evaluate_conditions, parse_rules_json, parse_rules_yaml
-from rupiv.policy.thresholds import ThresholdResult, ThresholdRule, check_threshold
-
+from rupiv.policy.rules import (
+    evaluate_condition,
+    evaluate_conditions,
+    parse_rules_json,
+    parse_rules_yaml,
+)
+from rupiv.policy.thresholds import ThresholdRule, check_threshold
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture()
+@pytest.fixture
 def engine() -> PolicyEngine:
     return PolicyEngine()
 
 
-@pytest.fixture()
+@pytest.fixture
 def small_invoice_context() -> dict:
     return {"invoice": {"total": Decimal("2500"), "currency": "EUR"}}
 
 
-@pytest.fixture()
+@pytest.fixture
 def large_invoice_context() -> dict:
     return {"invoice": {"total": Decimal("75000"), "currency": "EUR"}}
 
 
-@pytest.fixture()
+@pytest.fixture
 def low_csat_context() -> dict:
     return {
         "outcome": {
@@ -53,7 +57,7 @@ def low_csat_context() -> dict:
     }
 
 
-@pytest.fixture()
+@pytest.fixture
 def auto_approve_rule() -> PolicyRuleData:
     return PolicyRuleData(
         name="Auto-approve small invoices",
@@ -66,7 +70,7 @@ def auto_approve_rule() -> PolicyRuleData:
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def require_approval_rule() -> PolicyRuleData:
     return PolicyRuleData(
         name="CFO approval for large invoices",
@@ -81,7 +85,7 @@ def require_approval_rule() -> PolicyRuleData:
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def reject_low_csat_rule() -> PolicyRuleData:
     return PolicyRuleData(
         name="Reject low CSAT outcomes",
@@ -276,7 +280,9 @@ class TestConditionEvaluation:
 
     def test_contains_operator(self) -> None:
         context = {"invoice": {"description": "monthly subscription fee"}}
-        condition = Condition(field="invoice.description", operator="contains", value="subscription")
+        condition = Condition(
+            field="invoice.description", operator="contains", value="subscription",
+        )
         assert evaluate_condition(condition, context) is True
 
     def test_decimal_coercion(self) -> None:
@@ -505,8 +511,8 @@ class TestApprovalLifecycle:
             context_summary={},
             approver="admin",
             state=ApprovalState.PENDING,
-            created_at=datetime.now(timezone.utc) - timedelta(hours=48),
-            escalation_deadline=datetime.now(timezone.utc) - timedelta(hours=1),
+            created_at=datetime.now(UTC) - timedelta(hours=48),
+            escalation_deadline=datetime.now(UTC) - timedelta(hours=1),
         )
         assert check_escalation(request) is True
 
@@ -519,7 +525,7 @@ class TestApprovalLifecycle:
             context_summary={},
             approver="admin",
             state=ApprovalState.PENDING,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
             escalation_deadline=None,
         )
         assert check_escalation(request) is False

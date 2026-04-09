@@ -8,8 +8,8 @@ service.
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -51,6 +51,7 @@ class VatIdResult:
 # ---------------------------------------------------------------------------
 # In-memory cache (MVP — replace with Redis for production)
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class _CacheEntry:
@@ -100,6 +101,7 @@ def clear_cache() -> None:
 # Public API
 # ---------------------------------------------------------------------------
 
+
 async def validate_vat_id(
     country_code: str,
     vat_number: str,
@@ -128,7 +130,7 @@ async def validate_vat_id(
         )
         return cached
 
-    request_date = datetime.now(timezone.utc)
+    request_date = datetime.now(UTC)
 
     try:
         async with httpx.AsyncClient(timeout=_VIES_TIMEOUT) as client:

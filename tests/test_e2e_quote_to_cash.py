@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any
 
 import httpx
-import pytest
 
 from tests.conftest import make_event_payload
 
@@ -28,7 +27,9 @@ async def test_quote_to_cash_lifecycle(client: httpx.AsyncClient) -> None:
         "vat_number": "NL123456789B01",
     }
     resp = await client.post("/v1/entities", json=entity_payload)
-    assert resp.status_code == 201, f"Expected 201 creating entity, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 201, (
+        f"Expected 201 creating entity, got {resp.status_code}: {resp.text}"
+    )
 
     entity_data: dict[str, Any] = resp.json()
     entity_id: str = entity_data["id"]
@@ -55,7 +56,9 @@ async def test_quote_to_cash_lifecycle(client: httpx.AsyncClient) -> None:
         "metadata": {"entity_id": entity_id, "segment": "enterprise"},
     }
     resp = await client.post("/v1/customers", json=customer_payload)
-    assert resp.status_code == 201, f"Expected 201 creating customer, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 201, (
+        f"Expected 201 creating customer, got {resp.status_code}: {resp.text}"
+    )
 
     customer_data: dict[str, Any] = resp.json()
     customer_id: str = customer_data["id"]
@@ -98,7 +101,9 @@ async def test_quote_to_cash_lifecycle(client: httpx.AsyncClient) -> None:
         ],
     }
     resp = await client.post("/v1/plans", json=plan_payload)
-    assert resp.status_code == 201, f"Expected 201 creating plan, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 201, (
+        f"Expected 201 creating plan, got {resp.status_code}: {resp.text}"
+    )
 
     plan_data: dict[str, Any] = resp.json()
     plan_id: str = plan_data["id"]
@@ -124,7 +129,9 @@ async def test_quote_to_cash_lifecycle(client: httpx.AsyncClient) -> None:
         "term_months": 12,
     }
     resp = await client.post("/v1/quotes", json=quote_payload)
-    assert resp.status_code == 201, f"Expected 201 creating quote, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 201, (
+        f"Expected 201 creating quote, got {resp.status_code}: {resp.text}"
+    )
 
     quote_data: dict[str, Any] = resp.json()
     quote_id: str = quote_data["id"]
@@ -147,7 +154,9 @@ async def test_quote_to_cash_lifecycle(client: httpx.AsyncClient) -> None:
     # 6. Send the quote, verify status = sent
     # ------------------------------------------------------------------
     resp = await client.post(f"/v1/quotes/{quote_id}/send")
-    assert resp.status_code == 200, f"Expected 200 sending quote, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 200, (
+        f"Expected 200 sending quote, got {resp.status_code}: {resp.text}"
+    )
 
     sent_data: dict[str, Any] = resp.json()
     assert sent_data["status"] == "sent", "Quote status should be 'sent' after sending"
@@ -157,7 +166,9 @@ async def test_quote_to_cash_lifecycle(client: httpx.AsyncClient) -> None:
     # 7. Accept the quote, verify subscription + contract created
     # ------------------------------------------------------------------
     resp = await client.post(f"/v1/quotes/{quote_id}/accept")
-    assert resp.status_code == 200, f"Expected 200 accepting quote, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 200, (
+        f"Expected 200 accepting quote, got {resp.status_code}: {resp.text}"
+    )
 
     accept_data: dict[str, Any] = resp.json()
     assert accept_data["quote_id"] == quote_id, "Accept response quote_id mismatch"
@@ -172,7 +183,9 @@ async def test_quote_to_cash_lifecycle(client: httpx.AsyncClient) -> None:
 
     # Verify the quote itself is now in accepted status
     resp = await client.get(f"/v1/quotes/{quote_id}")
-    assert resp.status_code == 200, f"Expected 200 fetching accepted quote, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 200, (
+        f"Expected 200 fetching accepted quote, got {resp.status_code}: {resp.text}"
+    )
 
     accepted_quote: dict[str, Any] = resp.json()
     assert accepted_quote["status"] == "accepted", "Quote should be in accepted status"
@@ -228,7 +241,9 @@ async def test_quote_to_cash_lifecycle(client: httpx.AsyncClient) -> None:
         )
         event_data: dict[str, Any] = resp.json()
         assert "event_id" in event_data, f"Response for outcome event {idx} missing event_id"
-        assert event_data["status"] == "accepted", f"Outcome event {idx} status should be 'accepted'"
+        assert event_data["status"] == "accepted", (
+            f"Outcome event {idx} status should be 'accepted'"
+        )
         outcome_event_ids.append(event_data["event_id"])
 
     assert len(outcome_event_ids) == 3, "Should have ingested 3 outcome events"
@@ -254,7 +269,9 @@ async def test_quote_to_cash_lifecycle(client: httpx.AsyncClient) -> None:
     # 10. Verify entity still accessible
     # ------------------------------------------------------------------
     resp = await client.get(f"/v1/entities/{entity_id}")
-    assert resp.status_code == 200, f"Expected 200 fetching entity, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 200, (
+        f"Expected 200 fetching entity, got {resp.status_code}: {resp.text}"
+    )
 
     fetched_entity: dict[str, Any] = resp.json()
     assert fetched_entity["id"] == entity_id, "Fetched entity ID mismatch"

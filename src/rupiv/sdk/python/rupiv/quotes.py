@@ -102,16 +102,12 @@ class QuoteClient:
 
     def send_quote(self, quote_id: str) -> QuoteResponse:
         """Send a draft quote to the customer."""
-        data = _handle_response(
-            self._http.post(f"/v1/quotes/{quote_id}/send")
-        )
+        data = _handle_response(self._http.post(f"/v1/quotes/{quote_id}/send"))
         return QuoteResponse.model_validate(data)
 
     def accept_quote(self, quote_id: str) -> AcceptResponse:
         """Accept a quote, creating a subscription and revenue schedule."""
-        data = _handle_response(
-            self._http.post(f"/v1/quotes/{quote_id}/accept")
-        )
+        data = _handle_response(self._http.post(f"/v1/quotes/{quote_id}/accept"))
         return AcceptResponse.model_validate(data)
 
     def reject_quote(self, quote_id: str, reason: str) -> QuoteResponse:
@@ -120,7 +116,7 @@ class QuoteClient:
             self._http.post(
                 f"/v1/quotes/{quote_id}/reject",
                 json={"reason": reason},
-            )
+            ),
         )
         return QuoteResponse.model_validate(data)
 
@@ -197,16 +193,12 @@ class AsyncQuoteClient:
 
     async def send_quote(self, quote_id: str) -> QuoteResponse:
         """Send a draft quote to the customer."""
-        data = _handle_response(
-            await self._http.post(f"/v1/quotes/{quote_id}/send")
-        )
+        data = _handle_response(await self._http.post(f"/v1/quotes/{quote_id}/send"))
         return QuoteResponse.model_validate(data)
 
     async def accept_quote(self, quote_id: str) -> AcceptResponse:
         """Accept a quote, creating a subscription and revenue schedule."""
-        data = _handle_response(
-            await self._http.post(f"/v1/quotes/{quote_id}/accept")
-        )
+        data = _handle_response(await self._http.post(f"/v1/quotes/{quote_id}/accept"))
         return AcceptResponse.model_validate(data)
 
     async def reject_quote(self, quote_id: str, reason: str) -> QuoteResponse:
@@ -215,7 +207,7 @@ class AsyncQuoteClient:
             await self._http.post(
                 f"/v1/quotes/{quote_id}/reject",
                 json={"reason": reason},
-            )
+            ),
         )
         return QuoteResponse.model_validate(data)
 

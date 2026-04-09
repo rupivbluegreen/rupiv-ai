@@ -176,7 +176,7 @@ class Client:
     def reject_quote(self, quote_id: str, reason: str) -> QuoteResponse:
         """Reject a quote with a reason."""
         data = _handle_response(
-            self._http.post(f"/v1/quotes/{quote_id}/reject", json={"reason": reason})
+            self._http.post(f"/v1/quotes/{quote_id}/reject", json={"reason": reason}),
         )
         return QuoteResponse.model_validate(data)
 
@@ -354,9 +354,7 @@ class AsyncClient:
     async def reject_quote(self, quote_id: str, reason: str) -> QuoteResponse:
         """Reject a quote with a reason."""
         data = _handle_response(
-            await self._http.post(
-                f"/v1/quotes/{quote_id}/reject", json={"reason": reason}
-            )
+            await self._http.post(f"/v1/quotes/{quote_id}/reject", json={"reason": reason}),
         )
         return QuoteResponse.model_validate(data)
 
@@ -364,9 +362,7 @@ class AsyncClient:
 
     async def get_credits(self, customer_id: str) -> CreditBalanceResponse:
         """Fetch a customer's credit balance."""
-        data = _handle_response(
-            await self._http.get(f"/v1/credits/{customer_id}/balance")
-        )
+        data = _handle_response(await self._http.get(f"/v1/credits/{customer_id}/balance"))
         return CreditBalanceResponse.model_validate(data)
 
     async def purchase_credits(
@@ -381,9 +377,7 @@ class AsyncClient:
             "amount": amount,
             "idempotency_key": idempotency_key or str(uuid.uuid4()),
         }
-        data = _handle_response(
-            await self._http.post("/v1/credits/purchase", json=payload)
-        )
+        data = _handle_response(await self._http.post("/v1/credits/purchase", json=payload))
         return CreditBalanceResponse.model_validate(data)
 
     # -- Entities --------------------------------------------------------------

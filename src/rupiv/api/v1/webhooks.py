@@ -120,9 +120,7 @@ async def stripe_webhook(
 
     stripe = _get_stripe_client()
     try:
-        invoice = await process_stripe_webhook(
-            stripe, session, payload, signature, webhook_secret
-        )
+        invoice = await process_stripe_webhook(stripe, session, payload, signature, webhook_secret)
 
         if invoice is not None:
             logger.info(

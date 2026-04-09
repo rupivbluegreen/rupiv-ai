@@ -7,9 +7,7 @@ After all attempts are exhausted the invoice is marked uncollectible.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date, datetime, timezone
-from decimal import Decimal
-from typing import Any
+from datetime import date
 
 import structlog
 from sqlalchemy import select
@@ -136,7 +134,7 @@ async def get_invoices_for_dunning(session: AsyncSession) -> list[Invoice]:
         select(Invoice).where(
             Invoice.status == InvoiceStatus.OPEN,
             Invoice.due_date < now,
-        )
+        ),
     )
     invoices: list[Invoice] = list(result.scalars().all())
 

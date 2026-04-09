@@ -51,8 +51,7 @@ _TEMPLATES: list[PricingTemplate] = [
     PricingTemplate(
         name="API Platform Usage Pricing",
         description=(
-            "Tiered pricing based on token consumption. "
-            "Lower per-token cost at higher volumes."
+            "Tiered pricing based on token consumption. Lower per-token cost at higher volumes."
         ),
         category="usage",
         pricing_rules=[

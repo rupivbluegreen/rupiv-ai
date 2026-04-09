@@ -7,20 +7,17 @@ ClickHouse aggregation, the pricing engine, and invoice generation.
 
 from __future__ import annotations
 
-from decimal import Decimal
 from typing import Any
 
 import structlog
 from clickhouse_connect.driver.asyncclient import AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from rupiv.billing.aggregation import aggregate_outcomes, aggregate_usage
 from rupiv.billing.invoicing import generate_invoice
 from rupiv.billing.pricing import PricingEngine, PricingModel
 from rupiv.models.invoice import Invoice
-from rupiv.models.plan import PricingModel as ORMPricingModel
 from rupiv.models.policy_rule import PolicyRule
 from rupiv.policy.engine import PolicyEngine, PolicyRuleData
 from rupiv.policy.rules import Condition
@@ -90,7 +87,7 @@ async def _load_policy_rules(
         select(PolicyRule).where(
             PolicyRule.trigger == trigger,
             PolicyRule.is_active.is_(True),
-        )
+        ),
     )
     orm_rules = result.scalars().all()
 
@@ -109,7 +106,7 @@ async def _load_policy_rules(
                 approver=rule.approver,
                 escalation_after_hours=rule.escalation_after_hours,
                 priority=rule.priority,
-            )
+            ),
         )
 
     return policy_rules
@@ -210,9 +207,7 @@ async def run_billing_cycle(
         }
 
         policy_engine = PolicyEngine()
-        policy_result = policy_engine.evaluate(
-            context=policy_context, rules=policy_rules
-        )
+        policy_result = policy_engine.evaluate(context=policy_context, rules=policy_rules)
 
         if policy_result.action == "reject":
             log.warning(
@@ -223,7 +218,7 @@ async def run_billing_cycle(
             )
             raise ValueError(
                 f"Invoice generation rejected by policy rule "
-                f"'{policy_result.rule_name}': {policy_result.reason}"
+                f"'{policy_result.rule_name}': {policy_result.reason}",
             )
 
         if policy_result.action == "require_approval":

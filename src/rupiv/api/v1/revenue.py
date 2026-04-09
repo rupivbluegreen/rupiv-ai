@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime
+from datetime import datetime
 from decimal import Decimal
 from enum import Enum
 
@@ -23,7 +23,6 @@ from rupiv.models.revenue_schedule import (
 )
 from rupiv.models.subscription import Subscription
 from rupiv.revenue_recognition.allocation import allocate_transaction_price
-from rupiv.revenue_recognition.journal import generate_journal_entries
 from rupiv.revenue_recognition.obligations import identify_obligations
 from rupiv.revenue_recognition.schedules import generate_schedule
 
@@ -151,12 +150,8 @@ async def list_schedules(
     count_stmt = select(func.count(RevenueSchedule.id))
 
     if subscription_id is not None:
-        base_stmt = base_stmt.where(
-            RevenueSchedule.subscription_id == subscription_id
-        )
-        count_stmt = count_stmt.where(
-            RevenueSchedule.subscription_id == subscription_id
-        )
+        base_stmt = base_stmt.where(RevenueSchedule.subscription_id == subscription_id)
+        count_stmt = count_stmt.where(RevenueSchedule.subscription_id == subscription_id)
 
     if status is not None:
         base_stmt = base_stmt.where(RevenueSchedule.status == status.value)
@@ -401,11 +396,7 @@ async def list_journal_entries(
     total_result = await db.execute(count_stmt)
     total: int = total_result.scalar_one()
 
-    stmt = (
-        base_stmt.order_by(RevenueEntry.created_at.desc())
-        .limit(limit)
-        .offset(offset)
-    )
+    stmt = base_stmt.order_by(RevenueEntry.created_at.desc()).limit(limit).offset(offset)
     result = await db.execute(stmt)
     entries: list[RevenueEntry] = list(result.scalars().all())
 

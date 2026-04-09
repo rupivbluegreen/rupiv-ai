@@ -55,7 +55,25 @@ class CustomerUpdate(BaseModel):
 class CustomerResponse(BaseModel):
     """Customer resource representation."""
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={
+            "example": {
+                "id": "e4f3c2a1-7b60-4d8e-9a15-2f0e8c3d71b4",
+                "name": "WindmillAI BV",
+                "email": "billing@windmill-ai.nl",
+                "external_id": "wai-001",
+                "country_code": "NL",
+                "currency": "EUR",
+                "is_business": True,
+                "billing_email": "invoices@windmill-ai.nl",
+                "vat_number": "NL862345679B01",
+                "metadata": {"segment": "enterprise", "csm": "jan.devries"},
+                "created_at": "2026-03-15T10:22:00Z",
+                "updated_at": "2026-04-01T08:45:12Z",
+            },
+        },
+    )
 
     id: uuid.UUID
     name: str
@@ -96,7 +114,7 @@ async def list_customers(
     total: int = count_result.scalar_one()
 
     result = await session.execute(
-        select(Customer).order_by(Customer.created_at.desc()).limit(limit).offset(offset)
+        select(Customer).order_by(Customer.created_at.desc()).limit(limit).offset(offset),
     )
     rows: list[Customer] = list(result.scalars().all())
 

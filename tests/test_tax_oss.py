@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from rupiv.tax.oss import OSS_THRESHOLD, check_oss_applicable
+from rupiv.tax.oss import check_oss_applicable
 
 
 class TestOSSApplicability:

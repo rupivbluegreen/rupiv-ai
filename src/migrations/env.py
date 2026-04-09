@@ -11,11 +11,11 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-# Import Base so that all model metadata is available to autogenerate.
-from rupiv.db import Base
-
 # Import all models so their tables are registered on Base.metadata.
 import rupiv.models  # noqa: F401
+
+# Import Base so that all model metadata is available to autogenerate.
+from rupiv.db import Base
 
 # Alembic Config object — provides access to alembic.ini values.
 config = context.config

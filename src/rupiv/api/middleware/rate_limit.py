@@ -151,7 +151,9 @@ async def rate_limit_events(
     """Rate-limit dependency for the event-ingestion endpoint (1000 req/min)."""
     api_key = getattr(getattr(request, "state", None), "api_key", None)
     key = api_key.key_hash if api_key is not None else "anonymous"
-    await check_rate_limit(request, response, key=key, limit=DEFAULT_EVENT_LIMIT, window=DEFAULT_WINDOW)
+    await check_rate_limit(
+        request, response, key=key, limit=DEFAULT_EVENT_LIMIT, window=DEFAULT_WINDOW,
+    )
 
 
 async def rate_limit_default(

@@ -6,7 +6,7 @@ Covers simulation, A/B testing, revenue forecasting, and templates.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -19,7 +19,6 @@ from rupiv.pricing_studio.ab_test import ABTest, assign_variant
 from rupiv.pricing_studio.revenue_forecast import forecast_revenue
 from rupiv.pricing_studio.simulator import SimulationScenario, run_simulation
 from rupiv.pricing_studio.templates import get_templates
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -71,7 +70,7 @@ async def _seed_plan_and_events(
             metric="ticket_resolved",
             properties={"csat_score": 4.5, "escalated": False},
             idempotency_key=f"idem-sim-{i}",
-            timestamp=datetime(2026, 2, 15, 12, 0, 0, tzinfo=timezone.utc),
+            timestamp=datetime(2026, 2, 15, 12, 0, 0, tzinfo=UTC),
         )
         db_session.add(ev)
 

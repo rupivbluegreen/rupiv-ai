@@ -18,10 +18,8 @@ import structlog
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from rupiv.config import get_settings
 from rupiv.db import get_db
 from rupiv.models.revenue_schedule import (
     EntryType,
@@ -76,7 +74,7 @@ async def load_subscription(state: RevenueRecState) -> dict[str, Any]:
                     selectinload(Subscription.plan),
                     selectinload(Subscription.customer),
                 )
-                .where(Subscription.id == state["subscription_id"])
+                .where(Subscription.id == state["subscription_id"]),
             )
             subscription = result.scalar_one_or_none()
 
@@ -95,17 +93,19 @@ async def load_subscription(state: RevenueRecState) -> dict[str, Any]:
             # for downstream nodes to consume
             rules_data: list[dict] = []
             for rule in plan.pricing_rules:
-                rules_data.append({
-                    "id": str(rule.id),
-                    "pricing_model": rule.pricing_model.value
-                    if hasattr(rule.pricing_model, "value")
-                    else str(rule.pricing_model),
-                    "metric": rule.metric,
-                    "unit_amount": str(rule.unit_amount) if rule.unit_amount else None,
-                    "flat_amount": str(rule.flat_amount) if rule.flat_amount else None,
-                    "tiers": rule.tiers,
-                    "outcome_rules": rule.outcome_rules,
-                })
+                rules_data.append(
+                    {
+                        "id": str(rule.id),
+                        "pricing_model": rule.pricing_model.value
+                        if hasattr(rule.pricing_model, "value")
+                        else str(rule.pricing_model),
+                        "metric": rule.metric,
+                        "unit_amount": str(rule.unit_amount) if rule.unit_amount else None,
+                        "flat_amount": str(rule.flat_amount) if rule.flat_amount else None,
+                        "tiers": rule.tiers,
+                        "outcome_rules": rule.outcome_rules,
+                    },
+                )
 
             return {
                 "messages": [
@@ -120,7 +120,7 @@ async def load_subscription(state: RevenueRecState) -> dict[str, Any]:
                             "start_date": subscription.current_period_start.date().isoformat(),
                             "end_date": subscription.current_period_end.date().isoformat(),
                         },
-                    }
+                    },
                 ],
             }
     except Exception as exc:
@@ -283,8 +283,7 @@ async def generate_schedules_node(state: RevenueRecState) -> dict[str, Any]:
 
         # Build allocation lookup
         alloc_map: dict[str, Decimal] = {
-            a["obligation_id"]: Decimal(a["allocated_amount"])
-            for a in allocations_data
+            a["obligation_id"]: Decimal(a["allocated_amount"]) for a in allocations_data
         }
 
         all_entries: list[dict] = []
@@ -315,16 +314,18 @@ async def generate_schedules_node(state: RevenueRecState) -> dict[str, Any]:
             )
 
             for entry in entries:
-                all_entries.append({
-                    "obligation_id": str(entry.obligation_id),
-                    "period": entry.period,
-                    "method": entry.method,
-                    "gross_amount": str(entry.gross_amount),
-                    "recognized": str(entry.recognized),
-                    "deferred": str(entry.deferred),
-                    "gl_debit": entry.gl_debit,
-                    "gl_credit": entry.gl_credit,
-                })
+                all_entries.append(
+                    {
+                        "obligation_id": str(entry.obligation_id),
+                        "period": entry.period,
+                        "method": entry.method,
+                        "gross_amount": str(entry.gross_amount),
+                        "recognized": str(entry.recognized),
+                        "deferred": str(entry.deferred),
+                        "gl_debit": entry.gl_debit,
+                        "gl_credit": entry.gl_credit,
+                    },
+                )
 
         log.info(
             "revenue_agent.schedules_generated",
@@ -423,8 +424,7 @@ async def persist_schedule(state: RevenueRecState) -> dict[str, Any]:
         entries_data = state.get("schedule_entries", [])
 
         alloc_map: dict[str, Decimal] = {
-            a["obligation_id"]: Decimal(a["allocated_amount"])
-            for a in allocations_data
+            a["obligation_id"]: Decimal(a["allocated_amount"]) for a in allocations_data
         }
 
         # Group entries by obligation_id
@@ -441,9 +441,7 @@ async def persist_schedule(state: RevenueRecState) -> dict[str, Any]:
                 allocated = alloc_map.get(ob_id, Decimal("0"))
                 ob_entries = entries_by_obligation.get(ob_id, [])
 
-                total_recognized = sum(
-                    Decimal(e["recognized"]) for e in ob_entries
-                )
+                total_recognized = sum(Decimal(e["recognized"]) for e in ob_entries)
                 total_deferred = allocated - total_recognized
 
                 db_schedule = RevenueSchedule(
@@ -500,7 +498,7 @@ async def persist_schedule(state: RevenueRecState) -> dict[str, Any]:
                 {
                     "role": "system",
                     "content": f"Revenue schedule {schedule_id} persisted successfully",
-                }
+                },
             ],
         }
 
@@ -577,7 +575,7 @@ async def generate_revenue_schedule(subscription_id: str) -> RevenueRecState:
     config = {
         "configurable": {
             "thread_id": f"revenue-{subscription_id}-{uuid.uuid4().hex[:8]}",
-        }
+        },
     }
 
     result = await revenue_graph.ainvoke(initial_state, config=config)

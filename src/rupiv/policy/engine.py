@@ -124,7 +124,7 @@ class PolicyEngine:
                         approver=rule.approver,
                         reason=f"Rule '{rule.name}' matched",
                         matched=True,
-                    )
+                    ),
                 )
 
         return results

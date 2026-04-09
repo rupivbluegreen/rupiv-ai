@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from rupiv.analytics.cohort import CohortEntry, calculate_cohorts
+from rupiv.analytics.cohort import calculate_cohorts
 from rupiv.analytics.mrr_arr import calculate_arr, calculate_churn_rate, calculate_mrr
 from rupiv.analytics.outcome_metrics import calculate_outcome_metrics
 from rupiv.analytics.routing_optimizer import PSPRoute, find_cheapest_route
@@ -17,7 +17,6 @@ from rupiv.models.customer import Customer
 from rupiv.models.event import Event, EventType, OutcomeStatus
 from rupiv.models.plan import BillingInterval, Plan, PricingModel, PricingRule
 from rupiv.models.subscription import Subscription, SubscriptionStatus
-
 
 # ---------------------------------------------------------------------------
 # Routing optimizer tests
@@ -134,6 +133,7 @@ class TestCheapestRouteCountryDefault:
 # MRR / ARR tests
 # ---------------------------------------------------------------------------
 
+
 def _make_plan(
     plan_id: uuid.UUID,
     flat_amount: Decimal,
@@ -167,14 +167,16 @@ def _make_subscription(
     period_end: datetime | None = None,
 ) -> Subscription:
     """Create a Subscription instance."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     return Subscription(
         id=uuid.uuid4(),
         customer_id=customer_id,
         plan_id=plan_id,
         status=status,
         current_period_start=period_start or now.replace(day=1),
-        current_period_end=period_end or now.replace(month=now.month % 12 + 1, day=1) if period_end is None else period_end,
+        current_period_end=period_end or now.replace(month=now.month % 12 + 1, day=1)
+        if period_end is None
+        else period_end,
         canceled_at=canceled_at,
         created_at=created_at or now,
     )
@@ -205,9 +207,9 @@ async def test_mrr_calculation(db_session: AsyncSession) -> None:
         customer_id=customer_id,
         plan_id=plan_id,
         status=SubscriptionStatus.ACTIVE,
-        current_period_start=datetime(2026, 4, 1, tzinfo=timezone.utc),
-        current_period_end=datetime(2026, 5, 1, tzinfo=timezone.utc),
-        created_at=datetime(2026, 4, 1, tzinfo=timezone.utc),
+        current_period_start=datetime(2026, 4, 1, tzinfo=UTC),
+        current_period_end=datetime(2026, 5, 1, tzinfo=UTC),
+        created_at=datetime(2026, 4, 1, tzinfo=UTC),
     )
     db_session.add(sub)
 
@@ -234,9 +236,9 @@ async def test_mrr_calculation(db_session: AsyncSession) -> None:
         customer_id=customer2_id,
         plan_id=plan2_id,
         status=SubscriptionStatus.ACTIVE,
-        current_period_start=datetime(2026, 4, 1, tzinfo=timezone.utc),
-        current_period_end=datetime(2026, 5, 1, tzinfo=timezone.utc),
-        created_at=datetime(2026, 4, 1, tzinfo=timezone.utc),
+        current_period_start=datetime(2026, 4, 1, tzinfo=UTC),
+        current_period_end=datetime(2026, 5, 1, tzinfo=UTC),
+        created_at=datetime(2026, 4, 1, tzinfo=UTC),
     )
     db_session.add(sub2)
     await db_session.commit()
@@ -274,9 +276,9 @@ async def test_arr_is_mrr_times_12(db_session: AsyncSession) -> None:
         customer_id=customer_id,
         plan_id=plan_id,
         status=SubscriptionStatus.ACTIVE,
-        current_period_start=datetime(2026, 4, 1, tzinfo=timezone.utc),
-        current_period_end=datetime(2026, 5, 1, tzinfo=timezone.utc),
-        created_at=datetime(2026, 4, 1, tzinfo=timezone.utc),
+        current_period_start=datetime(2026, 4, 1, tzinfo=UTC),
+        current_period_end=datetime(2026, 5, 1, tzinfo=UTC),
+        created_at=datetime(2026, 4, 1, tzinfo=UTC),
     )
     db_session.add(sub)
     await db_session.commit()
@@ -315,19 +317,19 @@ async def test_churn_rate(db_session: AsyncSession) -> None:
         customer_id=customer_id,
         plan_id=plan_id,
         status=SubscriptionStatus.ACTIVE,
-        current_period_start=datetime(2026, 3, 1, tzinfo=timezone.utc),
-        current_period_end=datetime(2026, 4, 1, tzinfo=timezone.utc),
-        created_at=datetime(2026, 2, 1, tzinfo=timezone.utc),
+        current_period_start=datetime(2026, 3, 1, tzinfo=UTC),
+        current_period_end=datetime(2026, 4, 1, tzinfo=UTC),
+        created_at=datetime(2026, 2, 1, tzinfo=UTC),
     )
     sub_churned = Subscription(
         id=uuid.uuid4(),
         customer_id=customer_id,
         plan_id=plan_id,
         status=SubscriptionStatus.CANCELED,
-        current_period_start=datetime(2026, 3, 1, tzinfo=timezone.utc),
-        current_period_end=datetime(2026, 4, 1, tzinfo=timezone.utc),
-        canceled_at=datetime(2026, 3, 15, tzinfo=timezone.utc),
-        created_at=datetime(2026, 2, 1, tzinfo=timezone.utc),
+        current_period_start=datetime(2026, 3, 1, tzinfo=UTC),
+        current_period_end=datetime(2026, 4, 1, tzinfo=UTC),
+        canceled_at=datetime(2026, 3, 15, tzinfo=UTC),
+        created_at=datetime(2026, 2, 1, tzinfo=UTC),
     )
     db_session.add_all([sub_active, sub_churned])
     await db_session.commit()
@@ -372,16 +374,18 @@ async def test_outcome_metrics(db_session: AsyncSession) -> None:
             metric="ticket_resolved",
             idempotency_key=f"idem-outcome-{i}",
             outcome_status=status,
-            timestamp=datetime(2026, 4, 10, tzinfo=timezone.utc),
+            timestamp=datetime(2026, 4, 10, tzinfo=UTC),
             properties={"resolution_time": 30},
         )
-        for i, status in enumerate([
-            OutcomeStatus.VALIDATED,
-            OutcomeStatus.VALIDATED,
-            OutcomeStatus.VALIDATED,
-            OutcomeStatus.REJECTED,
-            OutcomeStatus.PENDING,
-        ])
+        for i, status in enumerate(
+            [
+                OutcomeStatus.VALIDATED,
+                OutcomeStatus.VALIDATED,
+                OutcomeStatus.VALIDATED,
+                OutcomeStatus.REJECTED,
+                OutcomeStatus.PENDING,
+            ],
+        )
     ]
     db_session.add_all(events)
     await db_session.commit()
@@ -431,7 +435,7 @@ async def test_cohort_retention(db_session: AsyncSession) -> None:
             country_code="NL",
             is_business=True,
             currency="EUR",
-            created_at=datetime(2026, 1, 5, tzinfo=timezone.utc),
+            created_at=datetime(2026, 1, 5, tzinfo=UTC),
         )
         db_session.add(customer)
 
@@ -439,37 +443,43 @@ async def test_cohort_retention(db_session: AsyncSession) -> None:
 
     # All 3 active in Jan, 2 in Feb, 1 in Mar
     # Customer 0: active all 3 months
-    db_session.add(Subscription(
-        id=uuid.uuid4(),
-        customer_id=customer_ids[0],
-        plan_id=plan_id,
-        status=SubscriptionStatus.ACTIVE,
-        current_period_start=datetime(2026, 1, 1, tzinfo=timezone.utc),
-        current_period_end=datetime(2026, 4, 1, tzinfo=timezone.utc),
-        created_at=datetime(2026, 1, 5, tzinfo=timezone.utc),
-    ))
+    db_session.add(
+        Subscription(
+            id=uuid.uuid4(),
+            customer_id=customer_ids[0],
+            plan_id=plan_id,
+            status=SubscriptionStatus.ACTIVE,
+            current_period_start=datetime(2026, 1, 1, tzinfo=UTC),
+            current_period_end=datetime(2026, 4, 1, tzinfo=UTC),
+            created_at=datetime(2026, 1, 5, tzinfo=UTC),
+        ),
+    )
 
     # Customer 1: active Jan-Feb (period covers Jan 1 - Feb 28)
-    db_session.add(Subscription(
-        id=uuid.uuid4(),
-        customer_id=customer_ids[1],
-        plan_id=plan_id,
-        status=SubscriptionStatus.ACTIVE,
-        current_period_start=datetime(2026, 1, 1, tzinfo=timezone.utc),
-        current_period_end=datetime(2026, 2, 28, tzinfo=timezone.utc),
-        created_at=datetime(2026, 1, 5, tzinfo=timezone.utc),
-    ))
+    db_session.add(
+        Subscription(
+            id=uuid.uuid4(),
+            customer_id=customer_ids[1],
+            plan_id=plan_id,
+            status=SubscriptionStatus.ACTIVE,
+            current_period_start=datetime(2026, 1, 1, tzinfo=UTC),
+            current_period_end=datetime(2026, 2, 28, tzinfo=UTC),
+            created_at=datetime(2026, 1, 5, tzinfo=UTC),
+        ),
+    )
 
     # Customer 2: active Jan only (period covers Jan 1 - Jan 31)
-    db_session.add(Subscription(
-        id=uuid.uuid4(),
-        customer_id=customer_ids[2],
-        plan_id=plan_id,
-        status=SubscriptionStatus.ACTIVE,
-        current_period_start=datetime(2026, 1, 1, tzinfo=timezone.utc),
-        current_period_end=datetime(2026, 1, 31, tzinfo=timezone.utc),
-        created_at=datetime(2026, 1, 5, tzinfo=timezone.utc),
-    ))
+    db_session.add(
+        Subscription(
+            id=uuid.uuid4(),
+            customer_id=customer_ids[2],
+            plan_id=plan_id,
+            status=SubscriptionStatus.ACTIVE,
+            current_period_start=datetime(2026, 1, 1, tzinfo=UTC),
+            current_period_end=datetime(2026, 1, 31, tzinfo=UTC),
+            created_at=datetime(2026, 1, 5, tzinfo=UTC),
+        ),
+    )
 
     await db_session.commit()
 

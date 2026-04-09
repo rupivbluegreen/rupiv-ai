@@ -109,23 +109,18 @@ def estimate_variable_consideration(
         best = max(historical_outcomes, key=lambda o: Decimal(str(o["probability"])))
         volume = Decimal(str(best["volume"]))
         confidence = Decimal(str(best["probability"]))
-        estimated = (volume * price_per_outcome).quantize(
-            _FOUR_PLACES, rounding=ROUND_HALF_UP
-        )
+        estimated = (volume * price_per_outcome).quantize(_FOUR_PLACES, rounding=ROUND_HALF_UP)
     else:
         # Expected value: sum of (volume * probability) across all scenarios.
         weighted_volume = sum(
-            Decimal(str(o["volume"])) * Decimal(str(o["probability"]))
-            for o in historical_outcomes
+            Decimal(str(o["volume"])) * Decimal(str(o["probability"])) for o in historical_outcomes
         )
         estimated = (weighted_volume * price_per_outcome).quantize(
-            _FOUR_PLACES, rounding=ROUND_HALF_UP
+            _FOUR_PLACES, rounding=ROUND_HALF_UP,
         )
         # Confidence = sum of probabilities of scenarios that actually occur
         # We use the total probability mass as a proxy.
-        confidence = sum(
-            Decimal(str(o["probability"])) for o in historical_outcomes
-        )
+        confidence = sum(Decimal(str(o["probability"])) for o in historical_outcomes)
         # Clamp to [0, 1].
         confidence = min(confidence, Decimal("1"))
 

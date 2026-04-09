@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import structlog
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from rupiv.models.plan import BillingInterval, PricingRule
+from rupiv.models.plan import BillingInterval
 from rupiv.models.subscription import Subscription, SubscriptionStatus
 
 log = structlog.get_logger(__name__)
@@ -51,21 +51,21 @@ def _monthly_equivalent(amount: Decimal | None, interval: BillingInterval | None
 
 def _month_start(d: date) -> datetime:
     """Return the first moment of the month containing *d* (UTC)."""
-    return datetime(d.year, d.month, 1, tzinfo=timezone.utc)
+    return datetime(d.year, d.month, 1, tzinfo=UTC)
 
 
 def _month_end(d: date) -> datetime:
     """Return the first moment of the *next* month (exclusive upper bound)."""
     if d.month == 12:
-        return datetime(d.year + 1, 1, 1, tzinfo=timezone.utc)
-    return datetime(d.year, d.month + 1, 1, tzinfo=timezone.utc)
+        return datetime(d.year + 1, 1, 1, tzinfo=UTC)
+    return datetime(d.year, d.month + 1, 1, tzinfo=UTC)
 
 
 def _prev_month_start(d: date) -> datetime:
     """Return the start of the previous month."""
     if d.month == 1:
-        return datetime(d.year - 1, 12, 1, tzinfo=timezone.utc)
-    return datetime(d.year, d.month - 1, 1, tzinfo=timezone.utc)
+        return datetime(d.year - 1, 12, 1, tzinfo=UTC)
+    return datetime(d.year, d.month - 1, 1, tzinfo=UTC)
 
 
 # ---------------------------------------------------------------------------
@@ -196,15 +196,17 @@ async def calculate_churn_rate(
     churn_rate = churned_in_period / active_at_period_start
     Returns a Decimal between 0 and 1 (or 0 if no customers).
     """
-    start_dt = datetime(period_start.year, period_start.month, period_start.day, tzinfo=timezone.utc)
-    end_dt = datetime(period_end.year, period_end.month, period_end.day, tzinfo=timezone.utc)
+    start_dt = datetime(
+        period_start.year, period_start.month, period_start.day, tzinfo=UTC,
+    )
+    end_dt = datetime(period_end.year, period_end.month, period_end.day, tzinfo=UTC)
 
     # Active at period start
     active_at_start_q = select(func.count(Subscription.id)).where(
         and_(
             Subscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.CANCELED]),
             Subscription.created_at < start_dt,
-        )
+        ),
     )
     active_at_start_result = await session.execute(active_at_start_q)
     active_at_start: int = active_at_start_result.scalar() or 0
@@ -218,7 +220,7 @@ async def calculate_churn_rate(
             Subscription.status == SubscriptionStatus.CANCELED,
             Subscription.canceled_at >= start_dt,
             Subscription.canceled_at < end_dt,
-        )
+        ),
     )
     churned_result = await session.execute(churned_q)
     churned: int = churned_result.scalar() or 0

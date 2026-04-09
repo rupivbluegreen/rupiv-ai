@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from rupiv.db import get_db
-from rupiv.models.quote import Quote, QuoteLineItem, QuoteStatus
+from rupiv.models.quote import Quote, QuoteStatus
 from rupiv.quoting.quote_acceptance import accept_quote, reject_quote
 from rupiv.quoting.quote_builder import build_quote
 
@@ -178,11 +178,7 @@ async def create_quote(
         ) from exc
 
     # Re-fetch with line items eagerly loaded
-    stmt = (
-        select(Quote)
-        .options(selectinload(Quote.line_items))
-        .where(Quote.id == quote.id)
-    )
+    stmt = select(Quote).options(selectinload(Quote.line_items)).where(Quote.id == quote.id)
     result = await session.execute(stmt)
     quote = result.scalar_one()
 
@@ -197,11 +193,7 @@ async def get_quote(
     """Return a single quote with line items."""
     logger.info("get_quote", quote_id=str(quote_id))
 
-    stmt = (
-        select(Quote)
-        .options(selectinload(Quote.line_items))
-        .where(Quote.id == quote_id)
-    )
+    stmt = select(Quote).options(selectinload(Quote.line_items)).where(Quote.id == quote_id)
     result = await session.execute(stmt)
     quote: Quote | None = result.scalar_one_or_none()
 
@@ -226,11 +218,7 @@ async def send_quote(
     """Mark a draft quote as sent to the customer."""
     logger.info("send_quote", quote_id=str(quote_id))
 
-    stmt = (
-        select(Quote)
-        .options(selectinload(Quote.line_items))
-        .where(Quote.id == quote_id)
-    )
+    stmt = select(Quote).options(selectinload(Quote.line_items)).where(Quote.id == quote_id)
     result = await session.execute(stmt)
     quote: Quote | None = result.scalar_one_or_none()
 
@@ -304,11 +292,7 @@ async def reject_quote_endpoint(
         ) from exc
 
     # Re-fetch with line items
-    stmt = (
-        select(Quote)
-        .options(selectinload(Quote.line_items))
-        .where(Quote.id == quote.id)
-    )
+    stmt = select(Quote).options(selectinload(Quote.line_items)).where(Quote.id == quote.id)
     result = await session.execute(stmt)
     quote = result.scalar_one()
 

@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from rupiv.models.invoice import TaxType
+from rupiv.tax.oss import OSS_THRESHOLD, check_oss_applicable
 from rupiv.tax.rates import (
     EU_VAT_RATES,
     EU_VAT_REDUCED_RATES,
@@ -15,9 +16,7 @@ from rupiv.tax.rates import (
     is_eu_country,
 )
 from rupiv.tax.vat_engine import TaxResult, calculate_vat, calculate_vat_detailed
-from rupiv.tax.oss import OSS_THRESHOLD, check_oss_applicable
-from rupiv.tax.vat_id_validation import VatIdResult, validate_vat_id, clear_cache
-
+from rupiv.tax.vat_id_validation import clear_cache, validate_vat_id
 
 # ---------------------------------------------------------------------------
 # Rate table tests
@@ -28,9 +27,33 @@ class TestEU27Rates:
     """Verify the EU27 VAT rate table is complete and correct."""
 
     _EU27_CODES = {
-        "AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR",
-        "DE", "GR", "HU", "IE", "IT", "LV", "LT", "LU", "MT", "NL",
-        "PL", "PT", "RO", "SK", "SI", "ES", "SE",
+        "AT",
+        "BE",
+        "BG",
+        "HR",
+        "CY",
+        "CZ",
+        "DK",
+        "EE",
+        "FI",
+        "FR",
+        "DE",
+        "GR",
+        "HU",
+        "IE",
+        "IT",
+        "LV",
+        "LT",
+        "LU",
+        "MT",
+        "NL",
+        "PL",
+        "PT",
+        "RO",
+        "SK",
+        "SI",
+        "ES",
+        "SE",
     }
 
     def test_all_27_eu_rates(self) -> None:
@@ -263,7 +286,7 @@ class TestOSSThreshold:
 
     def test_oss_threshold_value(self) -> None:
         """OSS threshold should be EUR 10,000."""
-        assert OSS_THRESHOLD == Decimal("10000")
+        assert Decimal("10000") == OSS_THRESHOLD
 
     def test_oss_threshold_below(self) -> None:
         """Below 10K uses seller rate (OSS not applicable)."""

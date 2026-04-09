@@ -210,13 +210,9 @@ class StripeClient:
 
         return _parse_payment_intent(resp_data)
 
-    async def get_payment_intent(
-        self, payment_intent_id: str
-    ) -> StripePaymentIntent:
+    async def get_payment_intent(self, payment_intent_id: str) -> StripePaymentIntent:
         """Retrieve a PaymentIntent via ``GET /v1/payment_intents/{id}``."""
-        response = await self._client.get(
-            f"/v1/payment_intents/{payment_intent_id}"
-        )
+        response = await self._client.get(f"/v1/payment_intents/{payment_intent_id}")
         response.raise_for_status()
         return _parse_payment_intent(response.json())
 

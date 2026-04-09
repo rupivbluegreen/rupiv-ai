@@ -17,7 +17,6 @@ from rupiv.entities.entity import (
 from rupiv.entities.hierarchy import EntityTree
 from rupiv.models.entity import EntityType
 
-
 # ---------------------------------------------------------------------------
 # Entity creation
 # ---------------------------------------------------------------------------
@@ -315,7 +314,9 @@ async def test_currency_conversion() -> None:
 
     # EUR -> USD
     usd_amount = await provider.convert(
-        Decimal("100.00"), "EUR", "USD",
+        Decimal("100.00"),
+        "EUR",
+        "USD",
     )
     assert usd_amount > Decimal("100.00")  # USD rate > 1
     assert isinstance(usd_amount, Decimal)

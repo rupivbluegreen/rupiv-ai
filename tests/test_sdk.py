@@ -3,27 +3,31 @@
 from __future__ import annotations
 
 import asyncio
-import json
-from datetime import datetime, timezone
-from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
-
-import httpx
-import pytest
 
 # ---------------------------------------------------------------------------
 # We import from the SDK package path directly so the tests work regardless
 # of whether the package is installed.
 # ---------------------------------------------------------------------------
 import importlib
-import sys
 import os
+import sys
+from datetime import UTC, datetime
+from typing import Any
+from unittest.mock import patch
+
+import httpx
+import pytest
 
 # The SDK lives under src/rupiv/sdk/python/rupiv/ which clashes with the
 # top-level rupiv package. We import the SDK modules by manipulating the
 # path temporarily and using importlib.
 _sdk_root = os.path.join(
-    os.path.dirname(__file__), "..", "src", "rupiv", "sdk", "python",
+    os.path.dirname(__file__),
+    "..",
+    "src",
+    "rupiv",
+    "sdk",
+    "python",
 )
 sys.path.insert(0, _sdk_root)
 # Save the main rupiv package then temporarily remove it so the SDK's
@@ -46,7 +50,7 @@ RupivError = _sdk_types_mod.RupivError
 # Helpers
 # ---------------------------------------------------------------------------
 
-_NOW = datetime.now(tz=timezone.utc).isoformat()
+_NOW = datetime.now(tz=UTC).isoformat()
 
 
 def _make_response(
@@ -258,9 +262,7 @@ class TestAsyncClientTrackEvent:
         mock_response = _make_response(json_data=json_data)
 
         async def _run() -> None:
-            with patch.object(
-                httpx.AsyncClient, "post", return_value=mock_response
-            ) as mock_post:
+            with patch.object(httpx.AsyncClient, "post", return_value=mock_response) as mock_post:
                 client = AsyncClient(api_key="rp_test_xxx")
                 result = await client.track_event(
                     metric="api_call",
@@ -296,9 +298,7 @@ class TestEventBatcherFlush:
             json_data={"accepted": 3, "errors": []},
         )
 
-        with patch.object(
-            httpx.Client, "post", return_value=batch_response
-        ) as mock_post:
+        with patch.object(httpx.Client, "post", return_value=batch_response) as mock_post:
             batcher = EventBatcher(
                 api_key="rp_test_xxx",
                 max_batch_size=100,
@@ -343,9 +343,7 @@ class TestEventBatcherFlush:
             json_data={"accepted": 2, "errors": []},
         )
 
-        with patch.object(
-            httpx.Client, "post", return_value=batch_response
-        ) as mock_post:
+        with patch.object(httpx.Client, "post", return_value=batch_response) as mock_post:
             batcher = EventBatcher(
                 api_key="rp_test_xxx",
                 max_batch_size=2,

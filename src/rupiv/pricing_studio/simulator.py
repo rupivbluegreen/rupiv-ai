@@ -34,13 +34,14 @@ class SimulationScenario(BaseModel):
     """Describes a what-if pricing scenario to test against historical data."""
 
     pricing_rules: list[dict[str, Any]] = Field(
-        ..., description="Proposed pricing rules to simulate"
+        ..., description="Proposed pricing rules to simulate",
     )
     date_range: dict[str, str] = Field(
-        ..., description="Start/end dates as ISO strings, e.g. {'start': '2026-01-01', 'end': '2026-03-31'}"
+        ...,
+        description="Start/end dates as ISO strings, e.g. {'start': '2026-01-01', 'end': '2026-03-31'}",
     )
     customer_ids: list[UUID] | None = Field(
-        default=None, description="Optional filter to specific customers"
+        default=None, description="Optional filter to specific customers",
     )
 
 
@@ -81,7 +82,9 @@ def _dict_to_rule(d: dict[str, Any]) -> _InMemoryRule:
         pricing_model=d.get("model", d.get("pricing_model", "outcome")),
         metric=d.get("metric"),
         flat_amount=_to_decimal(d.get("flat_amount")),
-        unit_amount=_to_decimal(d.get("unit_price", d.get("unit_amount", d.get("price_per_outcome")))),
+        unit_amount=_to_decimal(
+            d.get("unit_price", d.get("unit_amount", d.get("price_per_outcome"))),
+        ),
         outcome_rules=d.get("outcome_rules"),
         tiers=d.get("tiers"),
     )
@@ -111,9 +114,7 @@ def _aggregate_events(
         if ev.event_type == "usage":
             aggregated[metric]["quantity"] += Decimal("1")
         elif ev.event_type == "outcome":
-            aggregated[metric]["outcomes"].append(
-                {"properties": ev.properties or {}}
-            )
+            aggregated[metric]["outcomes"].append({"properties": ev.properties or {}})
 
     return aggregated
 
@@ -195,7 +196,7 @@ async def run_simulation(
     simulated_rules = [_dict_to_rule(d) for d in scenario.pricing_rules]
     simulated_aggregated = _aggregate_events(events, simulated_rules)
     simulated_line_items = engine.calculate_line_items(
-        simulated_rules, simulated_aggregated, period
+        simulated_rules, simulated_aggregated, period,
     )
     simulated_revenue = sum((li.amount for li in simulated_line_items), Decimal("0"))
 
@@ -220,7 +221,7 @@ async def run_simulation(
                 "amount": str(li.amount),
                 "metric": li.metric,
                 "pricing_model": li.pricing_model.value,
-            }
+            },
         )
 
     result_obj = SimulationResult(

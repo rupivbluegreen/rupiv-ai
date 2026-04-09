@@ -61,9 +61,7 @@ class CreditBalance(Base):
         lazy="selectin",
     )
 
-    __table_args__ = (
-        UniqueConstraint("customer_id", name="uq_credit_balances_customer_id"),
-    )
+    __table_args__ = (UniqueConstraint("customer_id", name="uq_credit_balances_customer_id"),)
 
 
 # ---------------------------------------------------------------------------

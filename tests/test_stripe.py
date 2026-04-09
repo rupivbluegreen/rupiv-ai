@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-import json
 import time
 from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
@@ -156,9 +155,7 @@ class TestGetPaymentIntent:
         assert result.currency == "usd"
         assert result.metadata == {"order": "42"}
 
-        client._client.get.assert_called_once_with(
-            "/v1/payment_intents/pi_existing456"
-        )
+        client._client.get.assert_called_once_with("/v1/payment_intents/pi_existing456")
 
 
 # ---------------------------------------------------------------------------

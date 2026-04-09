@@ -6,7 +6,7 @@ Events flow: POST /v1/events -> PostgreSQL -> Redis queue -> ClickHouse.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
@@ -52,7 +52,7 @@ async def ingest_event(
         The event payload dict that was enqueued (or would have been).
     """
     event_id = str(uuid4())
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     payload: dict[str, Any] = {
         "event_id": event_id,
@@ -119,17 +119,19 @@ async def write_to_clickhouse(events: list[dict[str, Any]]) -> int:
     try:
         rows: list[list[Any]] = []
         for e in events:
-            rows.append([
-                e["event_id"],
-                e["customer_id"],
-                e.get("subscription_id") or None,
-                e.get("event_type", "usage"),
-                e["metric"],
-                json.dumps(e.get("properties", {})),
-                e.get("outcome_status", "pending"),
-                e.get("idempotency_key", ""),
-                e["timestamp"],
-            ])
+            rows.append(
+                [
+                    e["event_id"],
+                    e["customer_id"],
+                    e.get("subscription_id") or None,
+                    e.get("event_type", "usage"),
+                    e["metric"],
+                    json.dumps(e.get("properties", {})),
+                    e.get("outcome_status", "pending"),
+                    e.get("idempotency_key", ""),
+                    e["timestamp"],
+                ],
+            )
 
         columns = [
             "event_id",

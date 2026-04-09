@@ -7,8 +7,8 @@ and escalation deadline checks.
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from enum import Enum
 from typing import Any
 
@@ -69,7 +69,7 @@ def create_approval_request(
 
     If *escalation_after_hours* is provided, sets an escalation deadline.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     escalation_deadline: datetime | None = None
     if escalation_after_hours is not None:
@@ -130,17 +130,15 @@ def resolve_approval(
     if request.state != ApprovalState.PENDING:
         raise ValueError(
             f"Cannot resolve request in state '{request.state.value}'; "
-            f"expected '{ApprovalState.PENDING.value}'"
+            f"expected '{ApprovalState.PENDING.value}'",
         )
 
     valid_decisions = {"approved", "rejected"}
     if decision not in valid_decisions:
-        raise ValueError(
-            f"Invalid decision '{decision}'; must be one of {valid_decisions}"
-        )
+        raise ValueError(f"Invalid decision '{decision}'; must be one of {valid_decisions}")
 
     new_state = ApprovalState(decision)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     resolved = ApprovalRequest(
         id=request.id,
@@ -177,5 +175,5 @@ def check_escalation(request: ApprovalRequest) -> bool:
     if request.escalation_deadline is None:
         return False
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     return now > request.escalation_deadline

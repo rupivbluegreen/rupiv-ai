@@ -7,7 +7,6 @@ from typing import Any
 
 from httpx import AsyncClient
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -100,9 +99,7 @@ async def test_list_subscriptions(client: AsyncClient) -> None:
     assert resp.status_code == 201
 
     # Filter by customer A
-    response = await client.get(
-        "/v1/subscriptions", params={"customer_id": cust_a}
-    )
+    response = await client.get("/v1/subscriptions", params={"customer_id": cust_a})
     assert response.status_code == 200
     body: dict[str, Any] = response.json()
     assert body["total"] == 2

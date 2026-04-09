@@ -14,7 +14,9 @@ class RupivError(Exception):
         self.status_code = status_code
         self.message = message
         self.request_id = request_id
-        super().__init__(f"[{status_code}] {message}" + (f" (request_id={request_id})" if request_id else ""))
+        super().__init__(
+            f"[{status_code}] {message}" + (f" (request_id={request_id})" if request_id else ""),
+        )
 
 
 class EventResponse(BaseModel):

@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any
 
 import httpx
-import pytest
 
 
 async def test_complex_plan_creation_and_listing(client: httpx.AsyncClient) -> None:

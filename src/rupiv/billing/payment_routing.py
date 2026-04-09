@@ -9,8 +9,8 @@ import structlog
 from rupiv.analytics.routing_optimizer import (
     DEFAULT_PSP,
     PSP_FEE_SCHEDULES,
-    PSPRoute,
     STRIPE_PREFERRED_COUNTRIES,
+    PSPRoute,
     find_cheapest_route,
 )
 
@@ -45,7 +45,7 @@ def route_payment(
         # Fall back to Mollie card
         method = preferred_method or "card"
         schedule = PSP_FEE_SCHEDULES[DEFAULT_PSP].get(
-            method, {"fixed": Decimal("0.25"), "rate_pct": Decimal("2.9")}
+            method, {"fixed": Decimal("0.25"), "rate_pct": Decimal("2.9")},
         )
         fixed = schedule["fixed"]
         rate_pct = schedule["rate_pct"]
@@ -71,8 +71,7 @@ def route_payment(
         if route.method in mollie_methods:
             mollie_schedule = mollie_methods[route.method]
             mollie_fee = (
-                mollie_schedule["fixed"]
-                + amount * mollie_schedule["rate_pct"] / Decimal("100")
+                mollie_schedule["fixed"] + amount * mollie_schedule["rate_pct"] / Decimal("100")
             ).quantize(Decimal("0.0001"))
             if mollie_fee <= route.estimated_fee:
                 log.info(

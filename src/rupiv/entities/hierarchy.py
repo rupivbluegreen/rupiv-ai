@@ -165,10 +165,7 @@ class EntityTree:
             descendants = await EntityTree.get_descendants(session, entity_id)
             descendant_ids = {d.id for d in descendants}
             if new_parent_id in descendant_ids:
-                msg = (
-                    f"Cannot move entity {entity_id} under {new_parent_id}: "
-                    f"would create a cycle"
-                )
+                msg = f"Cannot move entity {entity_id} under {new_parent_id}: would create a cycle"
                 raise ValueError(msg)
 
             # Verify new parent exists

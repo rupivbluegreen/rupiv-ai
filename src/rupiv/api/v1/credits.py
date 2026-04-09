@@ -12,13 +12,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from rupiv.billing.credits import (
-    InsufficientCreditsError,
-    consume_credits,
-    get_balance,
     get_or_create_balance,
     get_transactions,
     purchase_credits,
-    refund_credits,
 )
 from rupiv.db import get_db
 from rupiv.models.credit import TransactionType

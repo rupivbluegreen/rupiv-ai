@@ -110,8 +110,85 @@ def create_app() -> FastAPI:
 
     app = FastAPI(
         title="Rupiv.ai API",
+        description=(
+            "Outcome-based billing infrastructure for AI companies selling into Europe. "
+            "Ingest usage and outcome events, manage customers, plans, subscriptions, "
+            "invoices, quotes, credits, and revenue recognition — with EU VAT, IFRS 15, "
+            "and GDPR compliance built in. Supports agent-to-agent (A2A) autonomous "
+            "payments over SEPA fiat rails."
+        ),
         version=__version__,
         lifespan=_lifespan,
+        openapi_tags=[
+            {
+                "name": "events",
+                "description": "Ingest usage and outcome events for metering and billing.",
+            },
+            {
+                "name": "customers",
+                "description": "Create, read, update, and list customer records.",
+            },
+            {
+                "name": "entities",
+                "description": "Manage legal entities (BV, GmbH, SAS) and their hierarchy.",
+            },
+            {
+                "name": "plans",
+                "description": "Define billing plans with flat, usage, outcome, hybrid, tiered, or credit pricing rules.",
+            },
+            {
+                "name": "subscriptions",
+                "description": "Assign customers to plans and manage subscription lifecycle.",
+            },
+            {
+                "name": "quotes",
+                "description": "Generate, send, and accept pricing quotes (quote-to-cash).",
+            },
+            {
+                "name": "invoices",
+                "description": "View and manage invoices with EU VAT line items.",
+            },
+            {
+                "name": "revenue",
+                "description": "IFRS 15 revenue recognition schedules and journal entries.",
+            },
+            {
+                "name": "credits",
+                "description": "Pre-purchased credit balances and consumption tracking.",
+            },
+            {
+                "name": "analytics",
+                "description": "Payment cost analytics, MRR/ARR metrics, and routing optimisation.",
+            },
+            {
+                "name": "simulate",
+                "description": "Pricing Studio — what-if simulations, revenue forecasting, and pricing templates.",
+            },
+            {
+                "name": "a2a",
+                "description": "Agent-to-agent autonomous payments via SEPA credit transfer.",
+            },
+            {
+                "name": "webhooks",
+                "description": "Receive payment-provider callbacks from Mollie and Adyen.",
+            },
+            {
+                "name": "api-keys",
+                "description": "Manage API keys for SDK and programmatic access.",
+            },
+            {
+                "name": "onboarding",
+                "description": "Self-serve signup, billing setup, and account activation.",
+            },
+            {
+                "name": "compliance",
+                "description": "GDPR, DORA, and EU VAT compliance checks.",
+            },
+            {
+                "name": "stream",
+                "description": "Real-time WebSocket stream of billing events.",
+            },
+        ],
     )
 
     # CORS middleware

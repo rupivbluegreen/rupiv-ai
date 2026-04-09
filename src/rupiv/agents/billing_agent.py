@@ -13,7 +13,6 @@ import structlog
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from rupiv.billing.aggregation import aggregate_outcomes, aggregate_usage
@@ -73,7 +72,7 @@ async def load_subscription(state: BillingState) -> dict[str, Any]:
                     selectinload(Subscription.plan),
                     selectinload(Subscription.customer),
                 )
-                .where(Subscription.id == state["subscription_id"])
+                .where(Subscription.id == state["subscription_id"]),
             )
             subscription = result.scalar_one_or_none()
 
@@ -84,17 +83,19 @@ async def load_subscription(state: BillingState) -> dict[str, Any]:
 
             rules: list[dict] = []
             for rule in subscription.plan.pricing_rules:
-                rules.append({
-                    "id": str(rule.id),
-                    "pricing_model": rule.pricing_model.value
-                    if hasattr(rule.pricing_model, "value")
-                    else str(rule.pricing_model),
-                    "metric": rule.metric,
-                    "unit_amount": str(rule.unit_amount) if rule.unit_amount else None,
-                    "flat_amount": str(rule.flat_amount) if rule.flat_amount else None,
-                    "tiers": rule.tiers,
-                    "outcome_rules": rule.outcome_rules,
-                })
+                rules.append(
+                    {
+                        "id": str(rule.id),
+                        "pricing_model": rule.pricing_model.value
+                        if hasattr(rule.pricing_model, "value")
+                        else str(rule.pricing_model),
+                        "metric": rule.metric,
+                        "unit_amount": str(rule.unit_amount) if rule.unit_amount else None,
+                        "flat_amount": str(rule.flat_amount) if rule.flat_amount else None,
+                        "tiers": rule.tiers,
+                        "outcome_rules": rule.outcome_rules,
+                    },
+                )
 
             return {
                 "customer_id": str(subscription.customer_id),
@@ -106,7 +107,7 @@ async def load_subscription(state: BillingState) -> dict[str, Any]:
                         "role": "system",
                         "content": f"Loaded subscription {state['subscription_id']} "
                         f"with {len(rules)} pricing rules",
-                    }
+                    },
                 ],
             }
     except Exception as exc:
@@ -268,7 +269,7 @@ async def generate_invoice_node(state: BillingState) -> dict[str, Any]:
                     selectinload(Subscription.plan),
                     selectinload(Subscription.customer),
                 )
-                .where(Subscription.id == state["subscription_id"])
+                .where(Subscription.id == state["subscription_id"]),
             )
             subscription = result.scalar_one()
 
@@ -341,7 +342,7 @@ async def check_invoice_policy(state: BillingState) -> dict[str, Any]:
                 select(PolicyRule).where(
                     PolicyRule.trigger == "invoice.generated",
                     PolicyRule.is_active.is_(True),
-                )
+                ),
             )
             orm_rules = result.scalars().all()
 
@@ -355,7 +356,7 @@ async def check_invoice_policy(state: BillingState) -> dict[str, Any]:
                 .options(
                     selectinload(Subscription.customer),
                 )
-                .where(Subscription.id == state["subscription_id"])
+                .where(Subscription.id == state["subscription_id"]),
             )
             subscription = sub_result.scalar_one_or_none()
 
@@ -389,7 +390,7 @@ async def check_invoice_policy(state: BillingState) -> dict[str, Any]:
                         approver=rule.approver,
                         escalation_after_hours=rule.escalation_after_hours,
                         priority=rule.priority,
-                    )
+                    ),
                 )
 
             # Evaluate
@@ -460,9 +461,7 @@ async def attempt_payment(state: BillingState) -> dict[str, Any]:
         mollie = MollieClient(api_key=settings.MOLLIE_API_KEY)
         try:
             async for session in get_db():
-                result = await session.execute(
-                    select(Invoice).where(Invoice.id == invoice_id)
-                )
+                result = await session.execute(select(Invoice).where(Invoice.id == invoice_id))
                 invoice = result.scalar_one()
 
                 webhook_base_url = "https://api.rupiv.ai"
@@ -480,13 +479,12 @@ async def attempt_payment(state: BillingState) -> dict[str, Any]:
                         payment_id=payment_result.payment_id,
                     )
                     return {"payment_status": "paid"}
-                else:
-                    log.warning(
-                        "billing_agent.payment_failed",
-                        invoice_id=invoice_id,
-                        error=payment_result.error,
-                    )
-                    return {"payment_status": "failed"}
+                log.warning(
+                    "billing_agent.payment_failed",
+                    invoice_id=invoice_id,
+                    error=payment_result.error,
+                )
+                return {"payment_status": "failed"}
         finally:
             await mollie.close()
 
@@ -524,9 +522,7 @@ async def run_dunning_node(state: BillingState) -> dict[str, Any]:
 
     try:
         async for session in get_db():
-            result = await session.execute(
-                select(Invoice).where(Invoice.id == invoice_id)
-            )
+            result = await session.execute(select(Invoice).where(Invoice.id == invoice_id))
             invoice = result.scalar_one_or_none()
             if invoice:
                 invoice.status = InvoiceStatus.OPEN
@@ -541,7 +537,7 @@ async def run_dunning_node(state: BillingState) -> dict[str, Any]:
                 {
                     "role": "system",
                     "content": f"Invoice {invoice_id} scheduled for dunning",
-                }
+                },
             ],
         }
     except Exception as exc:

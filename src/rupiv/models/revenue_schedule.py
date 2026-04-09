@@ -17,7 +17,6 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from rupiv.db import Base
 
-
 # ---------------------------------------------------------------------------
 # Enums
 # ---------------------------------------------------------------------------
@@ -99,9 +98,7 @@ class RevenueSchedule(Base):
         lazy="selectin",
     )
 
-    __table_args__ = (
-        Index("ix_revenue_schedules_subscription_id", "subscription_id"),
-    )
+    __table_args__ = (Index("ix_revenue_schedules_subscription_id", "subscription_id"),)
 
 
 # ---------------------------------------------------------------------------

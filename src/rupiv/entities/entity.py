@@ -21,6 +21,7 @@ logger = structlog.get_logger(__name__)
 # Jurisdiction mapping: entity type → valid country codes
 # ---------------------------------------------------------------------------
 
+
 class Jurisdiction:
     """Maps entity types to the country codes where they are valid."""
 
@@ -94,10 +95,7 @@ async def create_entity(
     country_code = country_code.upper()
 
     if not validate_entity_type_for_country(entity_type, country_code):
-        msg = (
-            f"Entity type {entity_type.value} is not valid "
-            f"for country {country_code}"
-        )
+        msg = f"Entity type {entity_type.value} is not valid for country {country_code}"
         raise ValueError(msg)
 
     entity = LegalEntity(

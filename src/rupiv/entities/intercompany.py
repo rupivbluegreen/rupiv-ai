@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
@@ -47,15 +47,13 @@ async def generate_intercompany_invoice(
     """
     # Load both entities
     from_result = await session.execute(
-        select(LegalEntity).where(LegalEntity.id == from_entity_id)
+        select(LegalEntity).where(LegalEntity.id == from_entity_id),
     )
     from_entity: LegalEntity | None = from_result.scalar_one_or_none()
     if from_entity is None:
         raise ValueError(f"Entity {from_entity_id} not found")
 
-    to_result = await session.execute(
-        select(LegalEntity).where(LegalEntity.id == to_entity_id)
-    )
+    to_result = await session.execute(select(LegalEntity).where(LegalEntity.id == to_entity_id))
     to_entity: LegalEntity | None = to_result.scalar_one_or_none()
     if to_entity is None:
         raise ValueError(f"Entity {to_entity_id} not found")
@@ -66,13 +64,15 @@ async def generate_intercompany_invoice(
 
     if from_root is None or to_root is None or from_root.id != to_root.id:
         raise ValueError(
-            f"Entities {from_entity_id} and {to_entity_id} are not in the same hierarchy"
+            f"Entities {from_entity_id} and {to_entity_id} are not in the same hierarchy",
         )
 
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
 
     # Generate a unique intercompany invoice number
-    invoice_number = f"IC-{from_entity.country_code}-{to_entity.country_code}-{uuid.uuid4().hex[:8].upper()}"
+    invoice_number = (
+        f"IC-{from_entity.country_code}-{to_entity.country_code}-{uuid.uuid4().hex[:8].upper()}"
+    )
 
     invoice = Invoice(
         customer_id=to_entity_id,

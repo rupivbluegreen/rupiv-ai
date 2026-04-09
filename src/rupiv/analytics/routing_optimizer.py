@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import structlog
@@ -160,7 +160,7 @@ def find_cheapest_route(
     # Fallback to default PSP with card if nothing matched
     if best_psp is None:
         fallback_schedule = PSP_FEE_SCHEDULES[DEFAULT_PSP].get(
-            "card", {"fixed": Decimal("0.25"), "rate_pct": Decimal("2.9")}
+            "card", {"fixed": Decimal("0.25"), "rate_pct": Decimal("2.9")},
         )
         best_psp = DEFAULT_PSP
         best_fee = _estimate_fee(amount, fallback_schedule)
@@ -170,9 +170,7 @@ def find_cheapest_route(
         runner_up_fees = []
         for psp, methods in PSP_FEE_SCHEDULES.items():
             if psp != best_psp and method in methods:
-                runner_up_fees.append(
-                    (psp, _estimate_fee(amount, methods[method]))
-                )
+                runner_up_fees.append((psp, _estimate_fee(amount, methods[method])))
 
         if runner_up_fees:
             runner_up = min(runner_up_fees, key=lambda x: x[1])
@@ -215,14 +213,16 @@ async def get_recommendations(
     - method, current_psp, recommended_psp, volume, current_fees,
       estimated_fees, estimated_savings
     """
-    start_dt = datetime(period_start.year, period_start.month, period_start.day, tzinfo=timezone.utc)
-    end_dt = datetime(period_end.year, period_end.month, period_end.day, tzinfo=timezone.utc)
+    start_dt = datetime(
+        period_start.year, period_start.month, period_start.day, tzinfo=UTC,
+    )
+    end_dt = datetime(period_end.year, period_end.month, period_end.day, tzinfo=UTC)
 
     q = select(PaymentCostRecord).where(
         and_(
             PaymentCostRecord.created_at >= start_dt,
             PaymentCostRecord.created_at < end_dt,
-        )
+        ),
     )
     result = await session.execute(q)
     records = result.scalars().all()
@@ -243,7 +243,9 @@ async def get_recommendations(
 
     recommendations: list[dict] = []
     for (current_psp, method), data in grouped.items():
-        avg_amount = data["volume"] / Decimal(str(data["count"])) if data["count"] else Decimal("0")
+        avg_amount = (
+            data["volume"] / Decimal(str(data["count"])) if data["count"] else Decimal("0")
+        )
 
         # Find cheapest alternative
         best_alt_psp: str | None = None
@@ -254,9 +256,7 @@ async def get_recommendations(
                 continue
             schedule = methods[method]
             # Estimate total fees for the entire volume at this PSP's rates
-            total_est = sum(
-                _estimate_fee(avg_amount, schedule) for _ in range(data["count"])
-            )
+            total_est = sum(_estimate_fee(avg_amount, schedule) for _ in range(data["count"]))
             if best_alt_psp is None or total_est < best_alt_fee_total:
                 best_alt_psp = psp
                 best_alt_fee_total = total_est
@@ -278,7 +278,7 @@ async def get_recommendations(
                 "current_fees": data["fees"],
                 "estimated_fees": best_alt_fee_total,
                 "estimated_savings": savings,
-            }
+            },
         )
 
     recommendations.sort(key=lambda r: r["estimated_savings"], reverse=True)

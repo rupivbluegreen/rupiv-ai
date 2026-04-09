@@ -10,7 +10,6 @@ from __future__ import annotations
 import asyncio
 import json
 import signal
-import sys
 import time
 from typing import Any
 
@@ -145,6 +144,7 @@ class EventProcessorWorker:
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     """Entry point for ``python -m rupiv.workers.event_processor``."""

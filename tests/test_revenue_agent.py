@@ -46,6 +46,5 @@ class TestRevenueAgent:
         }
         missing: set[str] = expected_nodes - node_names
         assert not missing, (
-            f"Revenue graph is missing expected nodes: {missing}. "
-            f"Found: {node_names}"
+            f"Revenue graph is missing expected nodes: {missing}. Found: {node_names}"
         )

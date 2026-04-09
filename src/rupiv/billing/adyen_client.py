@@ -8,7 +8,6 @@ Amounts are converted to minor units (cents) as required by Adyen.
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
@@ -42,13 +41,13 @@ _MINOR_UNIT_EXPONENTS: dict[str, int] = {
 def _to_minor_units(amount: Decimal, currency: str) -> int:
     """Convert a Decimal amount to Adyen minor units (e.g. EUR 12.50 -> 1250)."""
     exponent = _MINOR_UNIT_EXPONENTS.get(currency.upper(), 2)
-    return int(amount * (10 ** exponent))
+    return int(amount * (10**exponent))
 
 
 def _from_minor_units(minor: int, currency: str) -> Decimal:
     """Convert Adyen minor units back to a Decimal amount."""
     exponent = _MINOR_UNIT_EXPONENTS.get(currency.upper(), 2)
-    return Decimal(minor) / (10 ** exponent)
+    return Decimal(minor) / (10**exponent)
 
 
 @dataclass(frozen=True)

@@ -32,23 +32,19 @@ class TestRoundCurrency:
 class TestECBRateProvider:
     """Tests for ECBRateProvider currency conversion."""
 
-    @pytest.fixture()
+    @pytest.fixture
     def provider(self) -> ECBRateProvider:
         """Return a fresh ECBRateProvider instance."""
         return ECBRateProvider()
 
     async def test_convert_eur_to_usd(self, provider: ECBRateProvider) -> None:
         """Converting EUR to USD should use the MVP rate (1.0850)."""
-        result: Decimal = await provider.convert(
-            Decimal("100.00"), "EUR", "USD"
-        )
+        result: Decimal = await provider.convert(Decimal("100.00"), "EUR", "USD")
         assert result == Decimal("108.50")
 
     async def test_convert_usd_to_gbp(self, provider: ECBRateProvider) -> None:
         """Cross-rate USD->GBP goes through EUR as pivot currency."""
-        result: Decimal = await provider.convert(
-            Decimal("100.00"), "USD", "GBP"
-        )
+        result: Decimal = await provider.convert(Decimal("100.00"), "USD", "GBP")
         # rate = GBP/EUR / USD/EUR = 0.8560 / 1.0850 ≈ 0.788940
         # 100 * 0.788940 = 78.89 (rounded to 2dp)
         expected: Decimal = round_currency(
@@ -59,9 +55,7 @@ class TestECBRateProvider:
 
     async def test_convert_same_currency(self, provider: ECBRateProvider) -> None:
         """Converting same currency should return the exact same amount."""
-        result: Decimal = await provider.convert(
-            Decimal("123.45"), "EUR", "EUR"
-        )
+        result: Decimal = await provider.convert(Decimal("123.45"), "EUR", "EUR")
         assert result == Decimal("123.45")
 
     async def test_get_rate_same_currency(self, provider: ECBRateProvider) -> None:

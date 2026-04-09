@@ -114,9 +114,7 @@ async def aggregate_outcomes(
     )
 
     column_names: list[str] = result.column_names  # type: ignore[assignment]
-    outcomes: list[dict[str, Any]] = [
-        dict(zip(column_names, row)) for row in result.result_rows
-    ]
+    outcomes: list[dict[str, Any]] = [dict(zip(column_names, row)) for row in result.result_rows]
 
     log.info(
         "aggregation.outcomes",

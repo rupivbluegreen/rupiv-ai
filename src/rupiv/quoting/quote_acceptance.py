@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import structlog
 from dateutil.relativedelta import relativedelta
@@ -20,7 +20,7 @@ logger: structlog.stdlib.BoundLogger = structlog.get_logger()
 def _ensure_tz_aware(dt: datetime) -> datetime:
     """Ensure a datetime is timezone-aware (assume UTC if naive)."""
     if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
+        return dt.replace(tzinfo=UTC)
     return dt
 
 
@@ -41,19 +41,15 @@ async def accept_quote(
         ValueError: If quote is not found, not in an acceptable state,
                     or has expired.
     """
-    result = await session.execute(
-        select(Quote).where(Quote.id == quote_id)
-    )
+    result = await session.execute(select(Quote).where(Quote.id == quote_id))
     quote = result.scalar_one_or_none()
     if quote is None:
         raise ValueError(f"Quote {quote_id} not found")
 
     if quote.status not in (QuoteStatus.DRAFT, QuoteStatus.SENT):
-        raise ValueError(
-            f"Cannot accept quote in status {quote.status.value}"
-        )
+        raise ValueError(f"Cannot accept quote in status {quote.status.value}")
 
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     expires_at = _ensure_tz_aware(quote.expires_at)
     if expires_at <= now:
         raise ValueError("Quote has expired")
@@ -119,17 +115,13 @@ async def reject_quote(
     Raises:
         ValueError: If quote is not found or not in a rejectable state.
     """
-    result = await session.execute(
-        select(Quote).where(Quote.id == quote_id)
-    )
+    result = await session.execute(select(Quote).where(Quote.id == quote_id))
     quote = result.scalar_one_or_none()
     if quote is None:
         raise ValueError(f"Quote {quote_id} not found")
 
     if quote.status not in (QuoteStatus.DRAFT, QuoteStatus.SENT):
-        raise ValueError(
-            f"Cannot reject quote in status {quote.status.value}"
-        )
+        raise ValueError(f"Cannot reject quote in status {quote.status.value}")
 
     quote.status = QuoteStatus.REJECTED
     quote.notes = reason
@@ -155,7 +147,7 @@ async def expire_stale_quotes(session: AsyncSession) -> int:
     Returns:
         Number of quotes expired.
     """
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
 
     # Use select + iterate to avoid SQLAlchemy evaluator timezone
     # comparison issues across database backends.

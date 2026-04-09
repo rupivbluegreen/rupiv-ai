@@ -25,9 +25,7 @@ class InsufficientCreditsError(Exception):
     def __init__(self, available: Decimal, requested: Decimal) -> None:
         self.available = available
         self.requested = requested
-        super().__init__(
-            f"Insufficient credits: available={available}, requested={requested}"
-        )
+        super().__init__(f"Insufficient credits: available={available}, requested={requested}")
 
 
 # ---------------------------------------------------------------------------
@@ -37,7 +35,7 @@ class InsufficientCreditsError(Exception):
 
 async def get_or_create_balance(
     session: AsyncSession,
-    customer_id: "str | __import__('uuid').UUID",
+    customer_id: str | __import__('uuid').UUID,
     currency: str = "EUR",
 ) -> CreditBalance:
     """Return the credit balance for *customer_id*, creating one if absent.
@@ -48,9 +46,7 @@ async def get_or_create_balance(
 
     cid = _uuid.UUID(str(customer_id)) if not isinstance(customer_id, _uuid.UUID) else customer_id
 
-    result = await session.execute(
-        select(CreditBalance).where(CreditBalance.customer_id == cid)
-    )
+    result = await session.execute(select(CreditBalance).where(CreditBalance.customer_id == cid))
     balance = result.scalar_one_or_none()
 
     if balance is None:
@@ -68,10 +64,10 @@ async def get_or_create_balance(
 
 async def purchase_credits(
     session: AsyncSession,
-    customer_id: "str | __import__('uuid').UUID",
+    customer_id: str | __import__('uuid').UUID,
     amount: Decimal,
     description: str,
-    invoice_id: "str | __import__('uuid').UUID | None" = None,
+    invoice_id: str | __import__('uuid').UUID | None = None,
 ) -> CreditTransaction:
     """Add credits to a customer's balance.
 
@@ -108,10 +104,10 @@ async def purchase_credits(
 
 async def consume_credits(
     session: AsyncSession,
-    customer_id: "str | __import__('uuid').UUID",
+    customer_id: str | __import__('uuid').UUID,
     amount: Decimal,
     description: str,
-    event_id: "str | __import__('uuid').UUID | None" = None,
+    event_id: str | __import__('uuid').UUID | None = None,
 ) -> CreditTransaction:
     """Deduct credits from a customer's balance.
 
@@ -154,7 +150,7 @@ async def consume_credits(
 
 async def get_balance(
     session: AsyncSession,
-    customer_id: "str | __import__('uuid').UUID",
+    customer_id: str | __import__('uuid').UUID,
 ) -> Decimal:
     """Return the current credit balance for *customer_id*.
 
@@ -165,7 +161,7 @@ async def get_balance(
     cid = _uuid.UUID(str(customer_id)) if not isinstance(customer_id, _uuid.UUID) else customer_id
 
     result = await session.execute(
-        select(CreditBalance.balance).where(CreditBalance.customer_id == cid)
+        select(CreditBalance.balance).where(CreditBalance.customer_id == cid),
     )
     raw = result.scalar_one_or_none()
     return Decimal(str(raw)) if raw is not None else Decimal("0")
@@ -173,7 +169,7 @@ async def get_balance(
 
 async def get_transactions(
     session: AsyncSession,
-    customer_id: "str | __import__('uuid').UUID",
+    customer_id: str | __import__('uuid').UUID,
     limit: int = 50,
     offset: int = 0,
 ) -> list[CreditTransaction]:
@@ -187,14 +183,14 @@ async def get_transactions(
         .where(CreditTransaction.customer_id == cid)
         .order_by(CreditTransaction.created_at.desc())
         .limit(limit)
-        .offset(offset)
+        .offset(offset),
     )
     return list(result.scalars().all())
 
 
 async def refund_credits(
     session: AsyncSession,
-    customer_id: "str | __import__('uuid').UUID",
+    customer_id: str | __import__('uuid').UUID,
     amount: Decimal,
     description: str,
 ) -> CreditTransaction:

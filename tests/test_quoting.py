@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -12,20 +12,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from rupiv.models.contract import Contract, ContractRenewalType, ContractStatus
 from rupiv.models.customer import Customer
 from rupiv.models.plan import BillingInterval, Plan, PricingModel, PricingRule
-from rupiv.models.quote import Quote, QuoteStatus
+from rupiv.models.quote import QuoteStatus
 from rupiv.models.subscription import Subscription, SubscriptionStatus
 from rupiv.quoting.contract import (
     calculate_early_termination_fee,
     check_renewal_due,
     get_active_contract,
-    renew_contract,
 )
 from rupiv.quoting.quote_acceptance import (
     accept_quote,
     expire_stale_quotes,
     reject_quote,
 )
-from rupiv.quoting.quote_builder import build_quote, recalculate_quote
+from rupiv.quoting.quote_builder import build_quote
 
 pytestmark = pytest.mark.asyncio
 
@@ -33,6 +32,7 @@ pytestmark = pytest.mark.asyncio
 # ---------------------------------------------------------------------------
 # Helpers — create prerequisite data within each test
 # ---------------------------------------------------------------------------
+
 
 async def _create_customer(session: AsyncSession) -> Customer:
     """Insert and return a sample customer."""
@@ -148,8 +148,10 @@ async def test_build_quote(db_session: AsyncSession) -> None:
     assert Decimal(str(quote.estimated_total)) == Decimal("12468.0000")
 
     # Expiry is ~30 days from now (SQLite strips timezone info, so compare naive)
-    now_naive = datetime.now(tz=timezone.utc).replace(tzinfo=None)
-    expires = quote.expires_at.replace(tzinfo=None) if quote.expires_at.tzinfo else quote.expires_at
+    now_naive = datetime.now(tz=UTC).replace(tzinfo=None)
+    expires = (
+        quote.expires_at.replace(tzinfo=None) if quote.expires_at.tzinfo else quote.expires_at
+    )
     assert expires > now_naive - timedelta(minutes=1)
     assert expires <= now_naive + timedelta(days=31)
 
@@ -222,7 +224,7 @@ async def test_accept_expired_quote(db_session: AsyncSession) -> None:
     )
 
     # Manually set expires_at to the past
-    quote.expires_at = datetime.now(tz=timezone.utc) - timedelta(hours=1)
+    quote.expires_at = datetime.now(tz=UTC) - timedelta(hours=1)
     await db_session.flush()
 
     with pytest.raises(ValueError, match="expired"):
@@ -257,7 +259,7 @@ async def test_expire_stale_quotes(db_session: AsyncSession) -> None:
         customer_id=customer.id,
         plan_id=plan.id,
     )
-    quote.expires_at = datetime.now(tz=timezone.utc) - timedelta(days=1)
+    quote.expires_at = datetime.now(tz=UTC) - timedelta(days=1)
     await db_session.flush()
 
     # Create a fresh quote that should NOT be expired
@@ -290,7 +292,7 @@ async def test_contract_renewal_check(db_session: AsyncSession) -> None:
     plan = await _create_plan_flat(db_session)
 
     # Create subscription directly
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     subscription = Subscription(
         customer_id=customer.id,
         plan_id=plan.id,
@@ -349,7 +351,7 @@ async def test_early_termination_fee(db_session: AsyncSession) -> None:
     customer = await _create_customer(db_session)
     plan = await _create_plan_flat(db_session)
 
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     subscription = Subscription(
         customer_id=customer.id,
         plan_id=plan.id,
@@ -376,14 +378,12 @@ async def test_early_termination_fee(db_session: AsyncSession) -> None:
     cancellation_date = date.today() + timedelta(days=185)
     monthly_value = Decimal("99.0000")
 
-    fee = calculate_early_termination_fee(
-        contract, cancellation_date, monthly_value=monthly_value
-    )
+    fee = calculate_early_termination_fee(contract, cancellation_date, monthly_value=monthly_value)
 
     # Remaining ~ 180 days = 6 months, fee = 6 * 99 * 0.50 = 297
     remaining_days = (contract.end_date - cancellation_date).days
     expected_months = (Decimal(str(remaining_days)) / Decimal("30")).quantize(
-        Decimal("1"), rounding="ROUND_UP"
+        Decimal("1"), rounding="ROUND_UP",
     )
     expected_fee = expected_months * monthly_value * Decimal("0.50")
 
@@ -404,7 +404,7 @@ async def test_get_active_contract(db_session: AsyncSession) -> None:
     customer = await _create_customer(db_session)
     plan = await _create_plan_flat(db_session)
 
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     subscription = Subscription(
         customer_id=customer.id,
         plan_id=plan.id,

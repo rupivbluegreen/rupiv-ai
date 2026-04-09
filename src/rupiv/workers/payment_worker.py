@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import signal
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -33,6 +33,7 @@ POLL_INTERVAL_SECONDS: int = 30
 # ---------------------------------------------------------------------------
 # Core logic
 # ---------------------------------------------------------------------------
+
 
 async def process_invoice_payment(
     session: AsyncSession,
@@ -97,9 +98,9 @@ async def process_invoice_payment(
             .where(Invoice.id == invoice.id)
             .values(
                 status=InvoiceStatus.PAID,
-                paid_at=datetime.now(timezone.utc),
+                paid_at=datetime.now(UTC),
                 mollie_payment_id=result.payment_id,
-            )
+            ),
         )
         log.info(
             "payment_worker.payment_succeeded",
@@ -107,18 +108,17 @@ async def process_invoice_payment(
             payment_id=result.payment_id,
         )
         return True
-    else:
-        await session.execute(
-            update(Invoice)
-            .where(Invoice.id == invoice.id)
-            .values(status=InvoiceStatus.UNCOLLECTIBLE)
-        )
-        log.error(
-            "payment_worker.payment_failed",
-            invoice_id=invoice_id,
-            error=result.error,
-        )
-        return False
+    await session.execute(
+        update(Invoice)
+        .where(Invoice.id == invoice.id)
+        .values(status=InvoiceStatus.UNCOLLECTIBLE),
+    )
+    log.error(
+        "payment_worker.payment_failed",
+        invoice_id=invoice_id,
+        error=result.error,
+    )
+    return False
 
 
 async def process_open_invoices(session: AsyncSession) -> tuple[int, int]:
@@ -165,6 +165,7 @@ async def process_open_invoices(session: AsyncSession) -> tuple[int, int]:
 # ---------------------------------------------------------------------------
 # Worker loop
 # ---------------------------------------------------------------------------
+
 
 class PaymentWorker:
     """Async worker that processes open invoices for payment.
@@ -225,7 +226,9 @@ class PaymentWorker:
                     _key, raw_payload = result
                     try:
                         payload = json.loads(raw_payload)
-                        invoice_id = payload.get("invoice_id") if isinstance(payload, dict) else raw_payload
+                        invoice_id = (
+                            payload.get("invoice_id") if isinstance(payload, dict) else raw_payload
+                        )
                     except (json.JSONDecodeError, TypeError):
                         invoice_id = raw_payload
 
@@ -283,6 +286,7 @@ class PaymentWorker:
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     """Entry point for ``python -m rupiv.workers.payment_worker``."""

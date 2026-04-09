@@ -10,8 +10,8 @@ VAT logic lives in :mod:`rupiv.tax` — this module imports
 from __future__ import annotations
 
 import secrets
-from datetime import datetime, timedelta, timezone
-from decimal import Decimal, ROUND_HALF_UP
+from datetime import datetime, timedelta
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 import structlog
@@ -22,7 +22,6 @@ from rupiv.models.invoice import (
     Invoice,
     InvoiceLineItem,
     InvoiceStatus,
-    TaxType,
 )
 from rupiv.tax.vat_engine import calculate_vat  # noqa: F401 — re-exported for back-compat
 

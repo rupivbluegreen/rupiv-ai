@@ -8,7 +8,7 @@ aggregates results and determines overall compliance.
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Any, Literal, TypedDict
+from typing import Any, TypedDict
 
 import structlog
 from langgraph.checkpoint.memory import MemorySaver
@@ -191,7 +191,7 @@ async def decide(state: ComplianceState) -> dict[str, Any]:
                 "content": f"Compliance: {'PASS' if is_compliant else 'FAIL'} "
                 f"({len(passed)} passed, {len(failed)} failed)"
                 + (f" — failures: {', '.join(failed)}" if failed else ""),
-            }
+            },
         ],
     }
 
@@ -258,11 +258,7 @@ async def check_compliance(
         "messages": [],
     }
 
-    config = {
-        "configurable": {
-            "thread_id": f"compliance-{customer_id}-{_uuid.uuid4().hex[:8]}"
-        }
-    }
+    config = {"configurable": {"thread_id": f"compliance-{customer_id}-{_uuid.uuid4().hex[:8]}"}}
 
     result = await compliance_graph.ainvoke(initial_state, config=config)
     log.info(

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import date, datetime, timezone
+from dataclasses import dataclass
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import structlog
@@ -57,8 +57,10 @@ async def calculate_payment_costs(
     period_end: date,
 ) -> PaymentCostSummary:
     """Calculate aggregated payment costs for *psp* over the given period."""
-    start_dt = datetime(period_start.year, period_start.month, period_start.day, tzinfo=timezone.utc)
-    end_dt = datetime(period_end.year, period_end.month, period_end.day, tzinfo=timezone.utc)
+    start_dt = datetime(
+        period_start.year, period_start.month, period_start.day, tzinfo=UTC,
+    )
+    end_dt = datetime(period_end.year, period_end.month, period_end.day, tzinfo=UTC)
 
     period_label = f"{period_start.isoformat()}/{period_end.isoformat()}"
 
@@ -67,7 +69,7 @@ async def calculate_payment_costs(
             PaymentCostRecord.psp == psp,
             PaymentCostRecord.created_at >= start_dt,
             PaymentCostRecord.created_at < end_dt,
-        )
+        ),
     )
     result = await session.execute(q)
     records = result.scalars().all()
@@ -139,8 +141,10 @@ async def get_cost_comparison(
     period_end: date,
 ) -> list[PaymentCostSummary]:
     """Compare costs across all PSPs for the given period."""
-    start_dt = datetime(period_start.year, period_start.month, period_start.day, tzinfo=timezone.utc)
-    end_dt = datetime(period_end.year, period_end.month, period_end.day, tzinfo=timezone.utc)
+    start_dt = datetime(
+        period_start.year, period_start.month, period_start.day, tzinfo=UTC,
+    )
+    end_dt = datetime(period_end.year, period_end.month, period_end.day, tzinfo=UTC)
 
     # Get distinct PSPs in the period
     q = (
@@ -149,7 +153,7 @@ async def get_cost_comparison(
             and_(
                 PaymentCostRecord.created_at >= start_dt,
                 PaymentCostRecord.created_at < end_dt,
-            )
+            ),
         )
         .distinct()
     )

@@ -6,9 +6,6 @@ node functions (called directly with mock state dicts, patching DB calls).
 
 from __future__ import annotations
 
-from typing import Any
-from unittest.mock import AsyncMock, patch
-
 import pytest
 
 # ---------------------------------------------------------------------------
@@ -74,8 +71,7 @@ class TestBillingAgent:
         }
         missing = expected_nodes - node_names
         assert not missing, (
-            f"Billing graph is missing expected nodes: {missing}. "
-            f"Found: {node_names}"
+            f"Billing graph is missing expected nodes: {missing}. Found: {node_names}"
         )
 
 
@@ -101,8 +97,7 @@ class TestOutcomeAgent:
         expected_nodes = {"load_event", "check_rules", "decide", "update_status"}
         missing = expected_nodes - node_names
         assert not missing, (
-            f"Outcome graph is missing expected nodes: {missing}. "
-            f"Found: {node_names}"
+            f"Outcome graph is missing expected nodes: {missing}. Found: {node_names}"
         )
 
     async def test_outcome_validation_passes(self) -> None:
@@ -266,8 +261,7 @@ class TestDunningAgent:
         }
         missing = expected_nodes - node_names
         assert not missing, (
-            f"Dunning graph is missing expected nodes: {missing}. "
-            f"Found: {node_names}"
+            f"Dunning graph is missing expected nodes: {missing}. Found: {node_names}"
         )
 
     def test_dunning_route_ends_on_paid(self) -> None:
@@ -360,8 +354,7 @@ class TestQuotingAgent:
         expected_nodes = {"load_context", "check_policies", "build_quote", "finalize"}
         missing = expected_nodes - node_names
         assert not missing, (
-            f"Quoting graph is missing expected nodes: {missing}. "
-            f"Found: {node_names}"
+            f"Quoting graph is missing expected nodes: {missing}. Found: {node_names}"
         )
 
 
@@ -413,8 +406,7 @@ class TestRevenueAgent:
         }
         missing = expected_nodes - node_names
         assert not missing, (
-            f"Revenue graph is missing expected nodes: {missing}. "
-            f"Found: {node_names}"
+            f"Revenue graph is missing expected nodes: {missing}. Found: {node_names}"
         )
 
 
@@ -469,7 +461,4 @@ class TestA2AAgent:
             "settle",
         }
         missing = expected_nodes - node_names
-        assert not missing, (
-            f"A2A graph is missing expected nodes: {missing}. "
-            f"Found: {node_names}"
-        )
+        assert not missing, f"A2A graph is missing expected nodes: {missing}. Found: {node_names}"

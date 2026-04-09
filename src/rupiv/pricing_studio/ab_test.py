@@ -14,7 +14,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import structlog
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from rupiv.billing.pricing import PricingEngine, _round_money
@@ -136,14 +136,10 @@ async def evaluate_test(
             if ev.event_type == "usage":
                 aggregated[metric]["quantity"] += Decimal("1")
             elif ev.event_type == "outcome":
-                aggregated[metric]["outcomes"].append(
-                    {"properties": ev.properties or {}}
-                )
+                aggregated[metric]["outcomes"].append({"properties": ev.properties or {}})
 
         period = "ab_test"
-        line_items = engine.calculate_line_items(
-            list(plan.pricing_rules), aggregated, period
-        )
+        line_items = engine.calculate_line_items(list(plan.pricing_rules), aggregated, period)
         return sum((li.amount for li in line_items), Decimal("0"))
 
     control_revenue = _compute_revenue(control_plan, control_events)

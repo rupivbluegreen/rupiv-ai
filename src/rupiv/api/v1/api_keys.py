@@ -135,9 +135,7 @@ async def list_api_keys(
     of the hash are shown for identification.
     """
     stmt = (
-        select(ApiKey)
-        .where(ApiKey.customer_id == customer.id)
-        .order_by(ApiKey.created_at.desc())
+        select(ApiKey).where(ApiKey.customer_id == customer.id).order_by(ApiKey.created_at.desc())
     )
     result = await session.execute(stmt)
     keys = result.scalars().all()
@@ -154,7 +152,7 @@ async def list_api_keys(
                 scopes=k.scopes,
                 created_at=k.created_at.isoformat(),
                 last_used_at=k.last_used_at.isoformat() if k.last_used_at else None,
-            )
+            ),
         )
     return items
 
@@ -174,10 +172,7 @@ async def deactivate_api_key(
     The key remains in the database for audit purposes but will no longer
     pass authentication.
     """
-    stmt = (
-        select(ApiKey)
-        .where(ApiKey.id == key_id, ApiKey.customer_id == customer.id)
-    )
+    stmt = select(ApiKey).where(ApiKey.id == key_id, ApiKey.customer_id == customer.id)
     result = await session.execute(stmt)
     api_key: ApiKey | None = result.scalar_one_or_none()
 
@@ -193,11 +188,7 @@ async def deactivate_api_key(
             detail="API key is already deactivated",
         )
 
-    await session.execute(
-        update(ApiKey)
-        .where(ApiKey.id == key_id)
-        .values(is_active=False)
-    )
+    await session.execute(update(ApiKey).where(ApiKey.id == key_id).values(is_active=False))
 
     logger.info(
         "api_key_deactivated",

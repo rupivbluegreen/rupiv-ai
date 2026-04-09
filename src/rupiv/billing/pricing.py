@@ -11,7 +11,7 @@ object that exposes the expected fields will work.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
 from enum import Enum
 from typing import Any, Protocol, runtime_checkable
 
@@ -196,7 +196,7 @@ class PricingEngine:
         cap_raw = outcome_cfg.get("cap_per_period")
         cap_per_period: Decimal | None = Decimal(str(cap_raw)) if cap_raw is not None else None
         price_per_outcome = _to_decimal(
-            outcome_cfg.get("price_per_outcome") or getattr(rule, "unit_amount", None)
+            outcome_cfg.get("price_per_outcome") or getattr(rule, "unit_amount", None),
         )
 
         if price_per_outcome == Decimal("0"):
@@ -343,7 +343,7 @@ class PricingEngine:
                         amount=amount,
                         metric=metric or None,
                         pricing_model=PricingModel.FLAT,
-                    )
+                    ),
                 )
 
             elif model == PricingModel.USAGE:
@@ -357,7 +357,7 @@ class PricingEngine:
                         amount=amount,
                         metric=metric or None,
                         pricing_model=PricingModel.USAGE,
-                    )
+                    ),
                 )
 
             elif model == PricingModel.OUTCOME:
@@ -365,8 +365,7 @@ class PricingEngine:
                 amount = self.calculate_outcome(rule, outcomes_list)
                 outcome_cfg = getattr(rule, "outcome_rules", None) or {}
                 ppo = _to_decimal(
-                    outcome_cfg.get("price_per_outcome")
-                    or getattr(rule, "unit_amount", None)
+                    outcome_cfg.get("price_per_outcome") or getattr(rule, "unit_amount", None),
                 )
                 billable_qty = amount / ppo if ppo else Decimal("0")
                 line_items.append(
@@ -377,7 +376,7 @@ class PricingEngine:
                         amount=amount,
                         metric=metric or None,
                         pricing_model=PricingModel.OUTCOME,
-                    )
+                    ),
                 )
 
             elif model == PricingModel.CREDIT:
@@ -400,7 +399,7 @@ class PricingEngine:
                         amount=amount,
                         metric=metric or None,
                         pricing_model=PricingModel.CREDIT,
-                    )
+                    ),
                 )
 
             elif model == PricingModel.TIERED:
@@ -414,7 +413,7 @@ class PricingEngine:
                         amount=amount,
                         metric=metric or None,
                         pricing_model=PricingModel.TIERED,
-                    )
+                    ),
                 )
 
         log.info(

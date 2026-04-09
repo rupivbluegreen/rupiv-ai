@@ -13,18 +13,16 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi import FastAPI
 from starlette.testclient import TestClient
 
 from rupiv.api.v1.stream import ConnectionManager, _matches_filters
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture()
+@pytest.fixture
 def ws_client(app: Any) -> TestClient:
     """Starlette TestClient for synchronous WebSocket testing."""
     return TestClient(app)
@@ -75,7 +73,7 @@ class TestMatchesFilters:
 class TestConnectionManager:
     """Tests for the ``ConnectionManager`` class."""
 
-    @pytest.fixture()
+    @pytest.fixture
     def mgr(self) -> ConnectionManager:
         return ConnectionManager()
 
@@ -92,7 +90,8 @@ class TestConnectionManager:
         assert ws not in mgr.active_connections
 
     async def test_disconnect_ignores_unknown_websocket(
-        self, mgr: ConnectionManager,
+        self,
+        mgr: ConnectionManager,
     ) -> None:
         ws: AsyncMock = AsyncMock()
         # Should not raise
@@ -111,7 +110,8 @@ class TestConnectionManager:
         ws2.send_text.assert_awaited_once_with("hello")
 
     async def test_broadcast_removes_failed_connections(
-        self, mgr: ConnectionManager,
+        self,
+        mgr: ConnectionManager,
     ) -> None:
         ws_good: AsyncMock = AsyncMock()
         ws_bad: AsyncMock = AsyncMock()
@@ -172,11 +172,13 @@ class TestWebSocketConnect:
 
     def test_websocket_receives_broadcast_event(self, ws_client: TestClient) -> None:
         """The WebSocket should receive events forwarded from Redis pub/sub."""
-        sample_event: str = json.dumps({
-            "event_type": "outcome",
-            "metric": "ticket_resolved",
-            "customer_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
-        })
+        sample_event: str = json.dumps(
+            {
+                "event_type": "outcome",
+                "metric": "ticket_resolved",
+                "customer_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            },
+        )
 
         async def _one_message_gen() -> Any:  # noqa: ANN401
             """Async generator that yields one Redis pub/sub message then blocks."""

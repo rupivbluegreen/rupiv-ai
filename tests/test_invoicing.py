@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from rupiv.billing.invoicing import (
@@ -11,7 +11,6 @@ from rupiv.billing.invoicing import (
     calculate_vat,
 )
 from rupiv.models.invoice import TaxType
-
 
 # ---------------------------------------------------------------------------
 # VAT calculation
@@ -84,7 +83,7 @@ class TestInvoiceNumberFormat:
 
     def test_generate_invoice_number_format(self) -> None:
         """Verify INV-YYYYMM-XXXXX format."""
-        period_start = datetime(2026, 4, 1, tzinfo=timezone.utc)
+        period_start = datetime(2026, 4, 1, tzinfo=UTC)
         number = _generate_invoice_number(period_start)
 
         # Pattern: INV-YYYYMM-XXXXX (5 uppercase hex chars)
@@ -96,7 +95,7 @@ class TestInvoiceNumberFormat:
 
     def test_generate_invoice_number_uniqueness(self) -> None:
         """Two consecutive calls should produce different numbers."""
-        period_start = datetime(2026, 4, 1, tzinfo=timezone.utc)
+        period_start = datetime(2026, 4, 1, tzinfo=UTC)
         n1 = _generate_invoice_number(period_start)
         n2 = _generate_invoice_number(period_start)
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date, timedelta
+from datetime import date
 from decimal import Decimal
 
 import structlog
@@ -61,17 +61,13 @@ async def renew_contract(
     Raises:
         ValueError: If contract is not found or not active.
     """
-    result = await session.execute(
-        select(Contract).where(Contract.id == contract_id)
-    )
+    result = await session.execute(select(Contract).where(Contract.id == contract_id))
     contract = result.scalar_one_or_none()
     if contract is None:
         raise ValueError(f"Contract {contract_id} not found")
 
     if contract.status != ContractStatus.ACTIVE:
-        raise ValueError(
-            f"Cannot renew contract in status {contract.status.value}"
-        )
+        raise ValueError(f"Cannot renew contract in status {contract.status.value}")
 
     # Complete the current contract
     contract.status = ContractStatus.COMPLETED
@@ -162,6 +158,6 @@ async def get_active_contract(
         select(Contract).where(
             Contract.subscription_id == subscription_id,
             Contract.status == ContractStatus.ACTIVE,
-        )
+        ),
     )
     return result.scalar_one_or_none()

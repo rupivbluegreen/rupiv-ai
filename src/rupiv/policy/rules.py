@@ -158,25 +158,24 @@ def evaluate_condition(condition: Condition, context: dict[str, Any]) -> bool:
 
     if op == "eq":
         return field_val == rule_val  # type: ignore[no-any-return]
-    elif op == "ne":
+    if op == "ne":
         return field_val != rule_val  # type: ignore[no-any-return]
-    elif op == "lt":
+    if op == "lt":
         return field_val < rule_val  # type: ignore[no-any-return]
-    elif op == "lte":
+    if op == "lte":
         return field_val <= rule_val  # type: ignore[no-any-return]
-    elif op == "gt":
+    if op == "gt":
         return field_val > rule_val  # type: ignore[no-any-return]
-    elif op == "gte":
+    if op == "gte":
         return field_val >= rule_val  # type: ignore[no-any-return]
-    elif op == "in":
+    if op == "in":
         return field_val in rule_val  # type: ignore[no-any-return]
-    elif op == "not_in":
+    if op == "not_in":
         return field_val not in rule_val  # type: ignore[no-any-return]
-    elif op == "contains":
+    if op == "contains":
         return rule_val in field_val  # type: ignore[no-any-return]
-    else:
-        log.warning("policy.condition.unknown_operator", operator=op)
-        return False
+    log.warning("policy.condition.unknown_operator", operator=op)
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -216,8 +215,7 @@ def parse_rules_yaml(yaml_str: str) -> list[PolicyRuleData]:
     """
     if not _HAS_YAML:
         raise ImportError(
-            "PyYAML is required for YAML rule parsing. "
-            "Install it with: pip install pyyaml"
+            "PyYAML is required for YAML rule parsing. Install it with: pip install pyyaml",
         )
 
     data = yaml.safe_load(yaml_str)

@@ -7,14 +7,12 @@ is marked uncollectible.
 
 from __future__ import annotations
 
-from decimal import Decimal
 from typing import Any, Literal, TypedDict
 
 import structlog
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from rupiv.billing.dunning import DEFAULT_RETRY_DELAYS_HOURS
 from rupiv.billing.payment import MollieClient, PaymentResult, charge_invoice
@@ -61,7 +59,7 @@ async def load_invoice(state: DunningState) -> dict[str, Any]:
     try:
         async for session in get_db():
             result = await session.execute(
-                select(Invoice).where(Invoice.id == state["invoice_id"])
+                select(Invoice).where(Invoice.id == state["invoice_id"]),
             )
             invoice = result.scalar_one_or_none()
 
@@ -92,7 +90,7 @@ async def load_invoice(state: DunningState) -> dict[str, Any]:
                         "role": "system",
                         "content": f"Invoice {state['invoice_id']} loaded "
                         f"(status={invoice.status.value}, total={invoice.total})",
-                    }
+                    },
                 ],
             }
 
@@ -133,9 +131,7 @@ async def attempt_payment(state: DunningState) -> dict[str, Any]:
         mollie = MollieClient(api_key=settings.MOLLIE_API_KEY)
         try:
             async for session in get_db():
-                result = await session.execute(
-                    select(Invoice).where(Invoice.id == invoice_id)
-                )
+                result = await session.execute(select(Invoice).where(Invoice.id == invoice_id))
                 invoice = result.scalar_one()
 
                 webhook_base_url = "https://api.rupiv.ai"
@@ -157,17 +153,16 @@ async def attempt_payment(state: DunningState) -> dict[str, Any]:
                         "attempt_number": attempt + 1,
                         "last_payment_error": None,
                     }
-                else:
-                    log.warning(
-                        "dunning_agent.payment_failed",
-                        invoice_id=invoice_id,
-                        error=payment_result.error,
-                        attempt=attempt,
-                    )
-                    return {
-                        "last_payment_error": payment_result.error,
-                        "attempt_number": attempt + 1,
-                    }
+                log.warning(
+                    "dunning_agent.payment_failed",
+                    invoice_id=invoice_id,
+                    error=payment_result.error,
+                    attempt=attempt,
+                )
+                return {
+                    "last_payment_error": payment_result.error,
+                    "attempt_number": attempt + 1,
+                }
         finally:
             await mollie.close()
 
@@ -226,7 +221,7 @@ async def schedule_retry(state: DunningState) -> dict[str, Any]:
                 "role": "system",
                 "content": f"Retry scheduled in {next_delay_hours}h "
                 f"(attempt {attempt}/{state['max_attempts']})",
-            }
+            },
         ],
     }
 
@@ -243,9 +238,7 @@ async def mark_uncollectible(state: DunningState) -> dict[str, Any]:
 
     try:
         async for session in get_db():
-            result = await session.execute(
-                select(Invoice).where(Invoice.id == invoice_id)
-            )
+            result = await session.execute(select(Invoice).where(Invoice.id == invoice_id))
             invoice = result.scalar_one_or_none()
             if invoice:
                 invoice.status = InvoiceStatus.UNCOLLECTIBLE

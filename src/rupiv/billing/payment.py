@@ -6,12 +6,11 @@ and webhook processing via the Mollie v2 API and Stripe v1 API.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+import json
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
-
-import json
 
 import httpx
 import structlog
@@ -304,9 +303,7 @@ async def process_webhook(
         mollie_status=payment.status,
     )
 
-    result = await session.execute(
-        select(Invoice).where(Invoice.mollie_payment_id == payment_id)
-    )
+    result = await session.execute(select(Invoice).where(Invoice.mollie_payment_id == payment_id))
     invoice: Invoice | None = result.scalar_one_or_none()
 
     if invoice is None:
@@ -329,7 +326,7 @@ async def process_webhook(
     invoice.status = new_status
 
     if new_status == InvoiceStatus.PAID:
-        invoice.paid_at = datetime.now(timezone.utc)
+        invoice.paid_at = datetime.now(UTC)
 
     log.info(
         "payment.webhook_invoice_updated",
@@ -444,9 +441,7 @@ async def process_stripe_webhook(
         return None
 
     result = await session.execute(
-        select(Invoice).where(
-            Invoice.stripe_payment_intent_id == payment_intent_id
-        )
+        select(Invoice).where(Invoice.stripe_payment_intent_id == payment_intent_id),
     )
     invoice: Invoice | None = result.scalar_one_or_none()
 
@@ -461,7 +456,7 @@ async def process_stripe_webhook(
     invoice.status = new_status
 
     if new_status == InvoiceStatus.PAID:
-        invoice.paid_at = datetime.now(timezone.utc)
+        invoice.paid_at = datetime.now(UTC)
 
     log.info(
         "stripe.webhook_invoice_updated",

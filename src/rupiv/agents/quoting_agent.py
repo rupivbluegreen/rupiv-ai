@@ -14,7 +14,6 @@ import structlog
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from rupiv.db import get_db
 from rupiv.models.customer import Customer
@@ -87,16 +86,14 @@ async def load_context(state: QuotingState) -> dict[str, Any]:
         async for session in get_db():
             # Load customer
             result = await session.execute(
-                select(Customer).where(Customer.id == state["customer_id"])
+                select(Customer).where(Customer.id == state["customer_id"]),
             )
             customer = result.scalar_one_or_none()
             if customer is None:
                 return {"error": f"Customer {state['customer_id']} not found"}
 
             # Load plan
-            result = await session.execute(
-                select(Plan).where(Plan.id == state["plan_id"])
-            )
+            result = await session.execute(select(Plan).where(Plan.id == state["plan_id"]))
             plan = result.scalar_one_or_none()
             if plan is None:
                 return {"error": f"Plan {state['plan_id']} not found"}
@@ -106,10 +103,9 @@ async def load_context(state: QuotingState) -> dict[str, Any]:
                     {
                         "role": "system",
                         "content": (
-                            f"Loaded customer {customer.name} "
-                            f"and plan {plan.name} for quoting"
+                            f"Loaded customer {customer.name} and plan {plan.name} for quoting"
                         ),
-                    }
+                    },
                 ],
             }
     except Exception as exc:
@@ -139,7 +135,7 @@ async def check_policies(state: QuotingState) -> dict[str, Any]:
                 select(PolicyRule).where(
                     PolicyRule.trigger == "quote.created",
                     PolicyRule.is_active.is_(True),
-                )
+                ),
             )
             orm_rules = result.scalars().all()
 
@@ -159,13 +155,11 @@ async def check_policies(state: QuotingState) -> dict[str, Any]:
             # Build context for policy evaluation
             # Re-load customer and plan for context fields
             cust_result = await session.execute(
-                select(Customer).where(Customer.id == state["customer_id"])
+                select(Customer).where(Customer.id == state["customer_id"]),
             )
             customer = cust_result.scalar_one()
 
-            plan_result = await session.execute(
-                select(Plan).where(Plan.id == state["plan_id"])
-            )
+            plan_result = await session.execute(select(Plan).where(Plan.id == state["plan_id"]))
             plan = plan_result.scalar_one()
 
             context: dict[str, Any] = {
@@ -281,7 +275,7 @@ async def build_quote_node(state: QuotingState) -> dict[str, Any]:
                             f"monthly: {quote.estimated_monthly}, "
                             f"total: {quote.estimated_total}"
                         ),
-                    }
+                    },
                 ],
             }
 
@@ -311,9 +305,7 @@ async def finalize(state: QuotingState) -> dict[str, Any]:
         from rupiv.models.quote import Quote, QuoteStatus
 
         async for session in get_db():
-            result = await session.execute(
-                select(Quote).where(Quote.id == quote_id)
-            )
+            result = await session.execute(select(Quote).where(Quote.id == quote_id))
             quote = result.scalar_one_or_none()
             if quote is None:
                 return {"error": f"Quote {quote_id} not found for finalization"}
@@ -337,7 +329,7 @@ async def finalize(state: QuotingState) -> dict[str, Any]:
                     {
                         "role": "system",
                         "content": f"Quote {quote_id} finalized as {quote.status.value}",
-                    }
+                    },
                 ],
             }
 
@@ -444,7 +436,7 @@ async def generate_quote(
     config = {
         "configurable": {
             "thread_id": f"quoting-{customer_id}-{_uuid.uuid4().hex[:8]}",
-        }
+        },
     }
 
     result = await quoting_graph.ainvoke(initial_state, config=config)

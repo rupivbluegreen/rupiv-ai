@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from enum import Enum
 from uuid import uuid4
@@ -83,7 +83,7 @@ async def create_transfer(
         raise ValueError("Transfer amount must be positive")
 
     transaction_id = str(uuid4())
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     debit = LedgerEntry(
         entry_id=str(uuid4()),
@@ -127,17 +127,23 @@ async def get_balance(account_id: str) -> Decimal:
     Balance = sum(credits) - sum(debits) where status = settled.
     """
     credits = sum(
-        (e.amount for e in _entries
-         if e.account_id == account_id
-         and e.entry_type == EntryType.CREDIT
-         and e.status == EntryStatus.SETTLED),
+        (
+            e.amount
+            for e in _entries
+            if e.account_id == account_id
+            and e.entry_type == EntryType.CREDIT
+            and e.status == EntryStatus.SETTLED
+        ),
         Decimal("0"),
     )
     debits = sum(
-        (e.amount for e in _entries
-         if e.account_id == account_id
-         and e.entry_type == EntryType.DEBIT
-         and e.status == EntryStatus.SETTLED),
+        (
+            e.amount
+            for e in _entries
+            if e.account_id == account_id
+            and e.entry_type == EntryType.DEBIT
+            and e.status == EntryStatus.SETTLED
+        ),
         Decimal("0"),
     )
 
@@ -169,8 +175,7 @@ async def settle_transaction(transaction_id: str) -> None:
     )
     if debit_total != credit_total:
         raise ValueError(
-            f"Imbalanced transaction {transaction_id}: "
-            f"debit={debit_total}, credit={credit_total}"
+            f"Imbalanced transaction {transaction_id}: debit={debit_total}, credit={credit_total}",
         )
 
     for entry in entries:
@@ -224,10 +229,13 @@ async def get_available_balance(account_id: str) -> Decimal:
     settled = await get_balance(account_id)
 
     pending_debits = sum(
-        (e.amount for e in _entries
-         if e.account_id == account_id
-         and e.entry_type == EntryType.DEBIT
-         and e.status == EntryStatus.PENDING),
+        (
+            e.amount
+            for e in _entries
+            if e.account_id == account_id
+            and e.entry_type == EntryType.DEBIT
+            and e.status == EntryStatus.PENDING
+        ),
         Decimal("0"),
     )
 

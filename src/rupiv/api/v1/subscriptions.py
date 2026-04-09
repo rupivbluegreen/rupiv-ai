@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -63,7 +63,12 @@ async def list_subscriptions(
     db: AsyncSession = Depends(get_db),
 ) -> SubscriptionListResponse:
     """Return a paginated list of subscriptions, optionally filtered by customer."""
-    logger.info("list_subscriptions", customer_id=str(customer_id) if customer_id else None, limit=limit, offset=offset)
+    logger.info(
+        "list_subscriptions",
+        customer_id=str(customer_id) if customer_id else None,
+        limit=limit,
+        offset=offset,
+    )
 
     stmt = select(Subscription)
     count_stmt = select(func.count()).select_from(Subscription)
@@ -85,7 +90,9 @@ async def list_subscriptions(
     )
 
 
-@router.get("/{subscription_id}", response_model=SubscriptionResponse, summary="Get a subscription")
+@router.get(
+    "/{subscription_id}", response_model=SubscriptionResponse, summary="Get a subscription",
+)
 async def get_subscription(
     subscription_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
@@ -93,9 +100,7 @@ async def get_subscription(
     """Return a single subscription by ID."""
     logger.info("get_subscription", subscription_id=str(subscription_id))
 
-    result = await db.execute(
-        select(Subscription).where(Subscription.id == subscription_id)
-    )
+    result = await db.execute(select(Subscription).where(Subscription.id == subscription_id))
     subscription = result.scalar_one_or_none()
     if subscription is None:
         raise HTTPException(
@@ -123,7 +128,7 @@ async def create_subscription(
         plan_id=str(payload.plan_id),
     )
 
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     subscription = Subscription(
         customer_id=payload.customer_id,
         plan_id=payload.plan_id,
@@ -150,9 +155,7 @@ async def cancel_subscription(
     """Cancel an existing subscription."""
     logger.info("cancel_subscription", subscription_id=str(subscription_id))
 
-    result = await db.execute(
-        select(Subscription).where(Subscription.id == subscription_id)
-    )
+    result = await db.execute(select(Subscription).where(Subscription.id == subscription_id))
     subscription = result.scalar_one_or_none()
     if subscription is None:
         raise HTTPException(
@@ -161,7 +164,7 @@ async def cancel_subscription(
         )
 
     subscription.status = SubscriptionStatus.CANCELED
-    subscription.canceled_at = datetime.now(tz=timezone.utc)
+    subscription.canceled_at = datetime.now(tz=UTC)
     await db.flush()
     await db.refresh(subscription)
 

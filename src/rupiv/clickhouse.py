@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import structlog
 from clickhouse_connect.driver.asyncclient import AsyncClient
-from clickhouse_connect.driver.httputil import default_pool_manager
 
 from rupiv.config import get_settings
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import secrets
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import structlog
 from fastapi import Depends, HTTPException, Request, Security, status
@@ -58,10 +58,7 @@ async def verify_api_key(key: str, session: AsyncSession) -> ApiKey:
     """
     key_hash = hash_api_key(key)
 
-    stmt = (
-        select(ApiKey)
-        .where(ApiKey.key_hash == key_hash, ApiKey.is_active.is_(True))
-    )
+    stmt = select(ApiKey).where(ApiKey.key_hash == key_hash, ApiKey.is_active.is_(True))
     result = await session.execute(stmt)
     api_key: ApiKey | None = result.scalar_one_or_none()
 
@@ -77,7 +74,7 @@ async def verify_api_key(key: str, session: AsyncSession) -> ApiKey:
         await session.execute(
             update(ApiKey)
             .where(ApiKey.id == api_key.id)
-            .values(last_used_at=datetime.now(timezone.utc))
+            .values(last_used_at=datetime.now(UTC)),
         )
     except Exception:
         logger.debug("auth_last_used_update_failed", api_key_id=str(api_key.id))
@@ -138,7 +135,7 @@ async def get_current_customer(
         request.state.api_key = api_key
 
         customer_result = await session.execute(
-            select(Customer).where(Customer.id == api_key.customer_id)
+            select(Customer).where(Customer.id == api_key.customer_id),
         )
         customer: Customer | None = customer_result.scalar_one_or_none()
         if customer is None:

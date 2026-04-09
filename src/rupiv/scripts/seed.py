@@ -6,7 +6,7 @@ import argparse
 import asyncio
 import random
 import uuid
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -14,23 +14,23 @@ import structlog
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from rupiv.db import Base, _get_engine, _get_session_factory
+from rupiv.db import _get_session_factory
+from rupiv.models.contract import Contract, ContractRenewalType, ContractStatus
 from rupiv.models.customer import Customer
+from rupiv.models.entity import EntityType, LegalEntity
 from rupiv.models.event import Event, EventType, OutcomeStatus
 from rupiv.models.invoice import Invoice, InvoiceLineItem, InvoiceStatus, TaxType
 from rupiv.models.plan import BillingInterval, Plan, PricingModel, PricingRule
-from rupiv.models.subscription import Subscription, SubscriptionStatus
-from rupiv.models.entity import EntityType, LegalEntity
 from rupiv.models.policy_rule import PolicyRule
 from rupiv.models.quote import Quote, QuoteLineItem, QuoteStatus
-from rupiv.models.contract import Contract, ContractRenewalType, ContractStatus
+from rupiv.models.subscription import Subscription, SubscriptionStatus
 
 log = structlog.get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-_NOW = datetime.now(tz=timezone.utc)
+_NOW = datetime.now(tz=UTC)
 
 
 def _months_ago(n: int) -> datetime:
@@ -159,8 +159,7 @@ def _build_plans() -> list[dict[str, Any]]:
             "id": growth_id,
             "name": "Growth",
             "description": (
-                "Base fee plus usage and outcome pricing. "
-                "Ideal for scaling AI products."
+                "Base fee plus usage and outcome pricing. Ideal for scaling AI products."
             ),
             "is_active": True,
             "currency": "EUR",
@@ -208,9 +207,7 @@ def _build_plans() -> list[dict[str, Any]]:
         {
             "id": scale_id,
             "name": "Scale",
-            "description": (
-                "High-volume plan with usage, outcome, and tiered pricing."
-            ),
+            "description": ("High-volume plan with usage, outcome, and tiered pricing."),
             "is_active": True,
             "currency": "EUR",
             "rules": [
@@ -267,9 +264,7 @@ def _build_plans() -> list[dict[str, Any]]:
         {
             "id": enterprise_id,
             "name": "Enterprise",
-            "description": (
-                "Premium plan with dedicated support and outcome billing."
-            ),
+            "description": ("Premium plan with dedicated support and outcome billing."),
             "is_active": True,
             "currency": "EUR",
             "rules": [
@@ -376,14 +371,14 @@ def _outcome_properties(metric: str) -> dict[str, Any]:
         return {
             "amount_saved": round(random.uniform(50.0, 5000.0), 2),
             "fraud_type": random.choice(
-                ["card_not_present", "account_takeover", "identity_theft"]
+                ["card_not_present", "account_takeover", "identity_theft"],
             ),
             "confidence": round(random.uniform(0.7, 1.0), 3),
         }
     if metric == "task_completed":
         return {
             "task_type": random.choice(
-                ["deploy", "rollback", "scale_up", "alert_triage", "incident_resolve"]
+                ["deploy", "rollback", "scale_up", "alert_triage", "incident_resolve"],
             ),
             "duration_seconds": random.randint(5, 1200),
             "automated": random.random() > 0.1,
@@ -391,16 +386,14 @@ def _outcome_properties(metric: str) -> dict[str, Any]:
     if metric == "document_reviewed":
         return {
             "document_type": random.choice(
-                ["contract", "nda", "terms_of_service", "privacy_policy"]
+                ["contract", "nda", "terms_of_service", "privacy_policy"],
             ),
             "pages": random.randint(1, 120),
             "issues_found": random.randint(0, 15),
         }
     # api_call — usage events have minimal properties
     return {
-        "endpoint": random.choice(
-            ["/v1/analyze", "/v1/predict", "/v1/classify", "/v1/embed"]
-        ),
+        "endpoint": random.choice(["/v1/analyze", "/v1/predict", "/v1/classify", "/v1/embed"]),
         "response_ms": random.randint(10, 800),
     }
 
@@ -444,6 +437,7 @@ def _tax_for_customer(customer: Customer) -> tuple[Decimal, TaxType | None]:
 # ---------------------------------------------------------------------------
 # Seed logic
 # ---------------------------------------------------------------------------
+
 
 async def _ensure_tables(session: AsyncSession) -> None:
     """Check whether the tables exist; advise running migrations if not."""
@@ -643,14 +637,16 @@ async def _seed_invoices(
             for rule in plan.pricing_rules:
                 if rule.pricing_model == PricingModel.FLAT and rule.flat_amount:
                     amt = rule.flat_amount
-                    line_items_data.append({
-                        "description": f"{plan.name} plan — monthly base fee",
-                        "quantity": Decimal("1.0000"),
-                        "unit_amount": amt,
-                        "amount": amt,
-                        "metric": None,
-                        "pricing_model": "flat",
-                    })
+                    line_items_data.append(
+                        {
+                            "description": f"{plan.name} plan — monthly base fee",
+                            "quantity": Decimal("1.0000"),
+                            "unit_amount": amt,
+                            "amount": amt,
+                            "metric": None,
+                            "pricing_model": "flat",
+                        },
+                    )
                     subtotal += amt
 
                 elif rule.pricing_model == PricingModel.USAGE and rule.unit_amount:
@@ -660,29 +656,31 @@ async def _seed_invoices(
                     per_k = rule.outcome_rules.get("per_unit", 1) if rule.outcome_rules else 1
                     units = qty / Decimal(str(per_k))
                     amt = (units * per_unit).quantize(Decimal("0.0001"))
-                    line_items_data.append({
-                        "description": f"Usage: {rule.metric} ({int(qty)} events)",
-                        "quantity": units,
-                        "unit_amount": per_unit,
-                        "amount": amt,
-                        "metric": rule.metric,
-                        "pricing_model": "usage",
-                    })
+                    line_items_data.append(
+                        {
+                            "description": f"Usage: {rule.metric} ({int(qty)} events)",
+                            "quantity": units,
+                            "unit_amount": per_unit,
+                            "amount": amt,
+                            "metric": rule.metric,
+                            "pricing_model": "usage",
+                        },
+                    )
                     subtotal += amt
 
                 elif rule.pricing_model == PricingModel.OUTCOME and rule.unit_amount:
                     qty = Decimal(str(random.randint(20, 300)))
                     amt = (qty * rule.unit_amount).quantize(Decimal("0.0001"))
-                    line_items_data.append({
-                        "description": (
-                            f"Outcome: {rule.metric} ({int(qty)} billable)"
-                        ),
-                        "quantity": qty,
-                        "unit_amount": rule.unit_amount,
-                        "amount": amt,
-                        "metric": rule.metric,
-                        "pricing_model": "outcome",
-                    })
+                    line_items_data.append(
+                        {
+                            "description": (f"Outcome: {rule.metric} ({int(qty)} billable)"),
+                            "quantity": qty,
+                            "unit_amount": rule.unit_amount,
+                            "amount": amt,
+                            "metric": rule.metric,
+                            "pricing_model": "outcome",
+                        },
+                    )
                     subtotal += amt
 
                 elif rule.pricing_model == PricingModel.TIERED and rule.tiers:
@@ -697,20 +695,20 @@ async def _seed_invoices(
                             break
                         tier_price = Decimal(str(tier["unit_amount"]))
                         tier_amt += (Decimal(str(bracket_size)) * tier_price).quantize(
-                            Decimal("0.0001")
+                            Decimal("0.0001"),
                         )
                         remaining -= bracket_size
                         prev_limit = up_to
-                    line_items_data.append({
-                        "description": (
-                            f"Tiered: {rule.metric} ({total_qty} events)"
-                        ),
-                        "quantity": Decimal(str(total_qty)),
-                        "unit_amount": Decimal("0.0000"),
-                        "amount": tier_amt,
-                        "metric": rule.metric,
-                        "pricing_model": "tiered",
-                    })
+                    line_items_data.append(
+                        {
+                            "description": (f"Tiered: {rule.metric} ({total_qty} events)"),
+                            "quantity": Decimal(str(total_qty)),
+                            "unit_amount": Decimal("0.0000"),
+                            "amount": tier_amt,
+                            "metric": rule.metric,
+                            "pricing_model": "tiered",
+                        },
+                    )
                     subtotal += tier_amt
 
             tax_amount = (subtotal * tax_rate).quantize(Decimal("0.0001"))
@@ -735,7 +733,9 @@ async def _seed_invoices(
                 period_end=p_end,
                 due_date=due,
                 paid_at=paid_at_val,
-                mollie_payment_id=f"tr_{uuid.uuid4().hex[:12]}" if status == InvoiceStatus.PAID else None,
+                mollie_payment_id=f"tr_{uuid.uuid4().hex[:12]}"
+                if status == InvoiceStatus.PAID
+                else None,
             )
             session.add(inv)
             await session.flush()
@@ -761,6 +761,7 @@ async def _seed_invoices(
 # ---------------------------------------------------------------------------
 # New-module seed helpers (entities, policy rules, quotes, contracts)
 # ---------------------------------------------------------------------------
+
 
 async def _seed_entities(session: AsyncSession) -> list[LegalEntity]:
     """Insert a parent BV + two child entities (GmbH, SAS)."""
@@ -868,34 +869,36 @@ async def _seed_quotes_and_contracts(
     await session.flush()
 
     # Line items for accepted quote
-    session.add_all([
-        QuoteLineItem(
-            quote_id=accepted_quote.id,
-            description="Growth plan — monthly base fee",
-            pricing_model="flat",
-            unit_amount=Decimal("149.0000"),
-            estimated_quantity=Decimal("1.0000"),
-            estimated_amount=Decimal("149.0000"),
-        ),
-        QuoteLineItem(
-            quote_id=accepted_quote.id,
-            description="Usage: api_call (est. 20K/mo)",
-            pricing_model="usage",
-            metric="api_call",
-            unit_amount=Decimal("0.1000"),
-            estimated_quantity=Decimal("20.0000"),
-            estimated_amount=Decimal("2.0000"),
-        ),
-        QuoteLineItem(
-            quote_id=accepted_quote.id,
-            description="Outcome: ticket_resolved (est. 200/mo)",
-            pricing_model="outcome",
-            metric="ticket_resolved",
-            unit_amount=Decimal("0.9900"),
-            estimated_quantity=Decimal("200.0000"),
-            estimated_amount=Decimal("198.0000"),
-        ),
-    ])
+    session.add_all(
+        [
+            QuoteLineItem(
+                quote_id=accepted_quote.id,
+                description="Growth plan — monthly base fee",
+                pricing_model="flat",
+                unit_amount=Decimal("149.0000"),
+                estimated_quantity=Decimal("1.0000"),
+                estimated_amount=Decimal("149.0000"),
+            ),
+            QuoteLineItem(
+                quote_id=accepted_quote.id,
+                description="Usage: api_call (est. 20K/mo)",
+                pricing_model="usage",
+                metric="api_call",
+                unit_amount=Decimal("0.1000"),
+                estimated_quantity=Decimal("20.0000"),
+                estimated_amount=Decimal("2.0000"),
+            ),
+            QuoteLineItem(
+                quote_id=accepted_quote.id,
+                description="Outcome: ticket_resolved (est. 200/mo)",
+                pricing_model="outcome",
+                metric="ticket_resolved",
+                unit_amount=Decimal("0.9900"),
+                estimated_quantity=Decimal("200.0000"),
+                estimated_amount=Decimal("198.0000"),
+            ),
+        ],
+    )
 
     # Contract from accepted quote, linked to ResolvAI subscription
     resolvai_sub = next(s for s in subs if s.customer_id == resolvai.id)
@@ -929,25 +932,27 @@ async def _seed_quotes_and_contracts(
     session.add(pending_quote)
     await session.flush()
 
-    session.add_all([
-        QuoteLineItem(
-            quote_id=pending_quote.id,
-            description="Scale plan — monthly base fee",
-            pricing_model="flat",
-            unit_amount=Decimal("499.0000"),
-            estimated_quantity=Decimal("1.0000"),
-            estimated_amount=Decimal("499.0000"),
-        ),
-        QuoteLineItem(
-            quote_id=pending_quote.id,
-            description="Usage: api_call (est. 50K/mo)",
-            pricing_model="usage",
-            metric="api_call",
-            unit_amount=Decimal("0.0600"),
-            estimated_quantity=Decimal("50.0000"),
-            estimated_amount=Decimal("3.0000"),
-        ),
-    ])
+    session.add_all(
+        [
+            QuoteLineItem(
+                quote_id=pending_quote.id,
+                description="Scale plan — monthly base fee",
+                pricing_model="flat",
+                unit_amount=Decimal("499.0000"),
+                estimated_quantity=Decimal("1.0000"),
+                estimated_amount=Decimal("499.0000"),
+            ),
+            QuoteLineItem(
+                quote_id=pending_quote.id,
+                description="Usage: api_call (est. 50K/mo)",
+                pricing_model="usage",
+                metric="api_call",
+                unit_amount=Decimal("0.0600"),
+                estimated_quantity=Decimal("50.0000"),
+                estimated_amount=Decimal("3.0000"),
+            ),
+        ],
+    )
     await session.flush()
     log.info("quotes_created", count=2, contracts=1)
 
@@ -955,6 +960,7 @@ async def _seed_quotes_and_contracts(
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
+
 
 async def seed(*, force: bool = False) -> None:
     """Run the full seed pipeline."""

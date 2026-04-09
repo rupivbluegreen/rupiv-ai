@@ -11,7 +11,6 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from rupiv.db import get_db
 from rupiv.entities.entity import create_entity
@@ -105,10 +104,17 @@ async def list_entities(
     session: AsyncSession = Depends(get_db),
 ) -> EntityListResponse:
     """Return a paginated list of legal entities, optionally filtered by parent."""
-    logger.info("list_entities", parent_id=str(parent_id) if parent_id else None, limit=limit, offset=offset)
+    logger.info(
+        "list_entities",
+        parent_id=str(parent_id) if parent_id else None,
+        limit=limit,
+        offset=offset,
+    )
 
     count_stmt = select(func.count(LegalEntity.id))
-    query_stmt = select(LegalEntity).order_by(LegalEntity.created_at.desc()).limit(limit).offset(offset)
+    query_stmt = (
+        select(LegalEntity).order_by(LegalEntity.created_at.desc()).limit(limit).offset(offset)
+    )
 
     if parent_id is not None:
         count_stmt = count_stmt.where(LegalEntity.parent_id == parent_id)
@@ -166,9 +172,7 @@ async def get_entity(
     """Return a single legal entity by ID."""
     logger.info("get_entity", entity_id=str(entity_id))
 
-    result = await session.execute(
-        select(LegalEntity).where(LegalEntity.id == entity_id)
-    )
+    result = await session.execute(select(LegalEntity).where(LegalEntity.id == entity_id))
     entity: LegalEntity | None = result.scalar_one_or_none()
 
     if entity is None:
@@ -189,9 +193,7 @@ async def update_entity(
     """Partially update a legal entity."""
     logger.info("update_entity", entity_id=str(entity_id))
 
-    result = await session.execute(
-        select(LegalEntity).where(LegalEntity.id == entity_id)
-    )
+    result = await session.execute(select(LegalEntity).where(LegalEntity.id == entity_id))
     entity: LegalEntity | None = result.scalar_one_or_none()
 
     if entity is None:
@@ -234,9 +236,7 @@ async def get_entity_children(
     logger.info("get_entity_children", entity_id=str(entity_id))
 
     # Verify entity exists
-    result = await session.execute(
-        select(LegalEntity).where(LegalEntity.id == entity_id)
-    )
+    result = await session.execute(select(LegalEntity).where(LegalEntity.id == entity_id))
     entity: LegalEntity | None = result.scalar_one_or_none()
 
     if entity is None:
@@ -249,7 +249,7 @@ async def get_entity_children(
     result = await session.execute(
         select(LegalEntity)
         .where(LegalEntity.parent_id == entity_id)
-        .order_by(LegalEntity.created_at.desc())
+        .order_by(LegalEntity.created_at.desc()),
     )
     children: list[LegalEntity] = list(result.scalars().all())
 
@@ -272,9 +272,7 @@ async def get_entity_ancestors(
     logger.info("get_entity_ancestors", entity_id=str(entity_id))
 
     # Verify entity exists
-    result = await session.execute(
-        select(LegalEntity).where(LegalEntity.id == entity_id)
-    )
+    result = await session.execute(select(LegalEntity).where(LegalEntity.id == entity_id))
     entity: LegalEntity | None = result.scalar_one_or_none()
 
     if entity is None:

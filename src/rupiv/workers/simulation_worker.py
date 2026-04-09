@@ -58,7 +58,7 @@ class SimulationWorker:
         job_data: dict[str, Any],
     ) -> None:
         """Run a single simulation job and store the result."""
-        from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+        from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
         job_id = job_data.get("job_id", "unknown")
         plan_id_str = job_data.get("plan_id")

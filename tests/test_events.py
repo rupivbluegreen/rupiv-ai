@@ -14,10 +14,10 @@ from httpx import AsyncClient
 
 from tests.conftest import make_event_payload
 
-
 # ---------------------------------------------------------------------------
 # Helper: patch ingest_event so BullMQ/Redis are never called
 # ---------------------------------------------------------------------------
+
 
 def _patch_ingest() -> Any:
     """Return a context-manager that stubs out ``ingest_event``."""

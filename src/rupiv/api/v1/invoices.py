@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from rupiv.db import get_db
-from rupiv.models.invoice import Invoice, InvoiceLineItem
+from rupiv.models.invoice import Invoice
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger()
 
@@ -47,7 +47,33 @@ class LineItem(BaseModel):
 class InvoiceResponse(BaseModel):
     """Invoice resource representation."""
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={
+            "example": {
+                "id": "d4e5f6a7-8901-4bcd-ef23-456789abcdef",
+                "customer_id": "e4f3c2a1-7b60-4d8e-9a15-2f0e8c3d71b4",
+                "status": "open",
+                "currency": "EUR",
+                "subtotal": "4950.0000",
+                "tax_amount": "1039.5000",
+                "total": "5989.5000",
+                "line_items": [
+                    {
+                        "description": "Resolved support tickets (Mar 2026)",
+                        "metric": "ticket_resolved",
+                        "quantity": "5000.0000",
+                        "unit_amount": "0.9900",
+                        "amount": "4950.0000",
+                    },
+                ],
+                "period_start": "2026-03-01T00:00:00Z",
+                "period_end": "2026-03-31T23:59:59Z",
+                "due_date": "2026-04-14",
+                "created_at": "2026-04-01T02:00:00Z",
+            },
+        },
+    )
 
     id: uuid.UUID
     customer_id: uuid.UUID
@@ -107,8 +133,7 @@ async def list_invoices(
 
     # Fetch paginated invoices with eagerly loaded line_items
     stmt = (
-        base_stmt
-        .options(selectinload(Invoice.line_items))
+        base_stmt.options(selectinload(Invoice.line_items))
         .order_by(Invoice.created_at.desc())
         .limit(limit)
         .offset(offset)
@@ -131,9 +156,7 @@ async def get_invoice(
     logger.info("get_invoice", invoice_id=str(invoice_id))
 
     stmt = (
-        select(Invoice)
-        .where(Invoice.id == invoice_id)
-        .options(selectinload(Invoice.line_items))
+        select(Invoice).where(Invoice.id == invoice_id).options(selectinload(Invoice.line_items))
     )
     result = await db.execute(stmt)
     invoice: Invoice | None = result.scalar_one_or_none()

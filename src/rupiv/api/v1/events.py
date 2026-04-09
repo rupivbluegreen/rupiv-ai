@@ -31,12 +31,28 @@ class EventType(str, Enum):
 class EventCreate(BaseModel):
     """Request body for creating a new event."""
 
-    type: EventType
-    metric: str = Field(..., description="Metric identifier, e.g. 'ticket_resolved'")
-    customer_id: uuid.UUID
-    properties: dict[str, Any] = Field(default_factory=dict)
+    type: EventType = Field(..., example="outcome")
+    metric: str = Field(
+        ...,
+        description="Metric identifier, e.g. 'ticket_resolved'",
+        example="ticket_resolved",
+    )
+    customer_id: uuid.UUID = Field(
+        ..., example="e4f3c2a1-7b60-4d8e-9a15-2f0e8c3d71b4",
+    )
+    properties: dict[str, Any] = Field(
+        default_factory=dict,
+        example={
+            "resolution_time": 42,
+            "escalated": False,
+            "csat_score": 4.8,
+            "agent_id": "support-agent-nl-003",
+        },
+    )
     idempotency_key: str = Field(
-        ..., description="Client-provided idempotency key for deduplication"
+        ...,
+        description="Client-provided idempotency key for deduplication",
+        example="evt-20260409-nl-003-a7c9e2",
     )
 
 

@@ -145,6 +145,4 @@ class QuoteLineItem(Base):
     # ----- Relationships -----
     quote: Mapped[Quote] = relationship(back_populates="line_items")
 
-    __table_args__ = (
-        Index("ix_quote_line_items_quote_id", "quote_id"),
-    )
+    __table_args__ = (Index("ix_quote_line_items_quote_id", "quote_id"),)

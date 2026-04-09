@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any
 
 import httpx
-import pytest
 
 from tests.conftest import make_event_payload
 
@@ -40,7 +39,9 @@ async def test_full_billing_flow(client: httpx.AsyncClient) -> None:
         "metadata": {"tier": "growth", "source": "api"},
     }
     resp = await client.post("/v1/customers", json=customer_payload)
-    assert resp.status_code == 201, f"Expected 201 creating customer, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 201, (
+        f"Expected 201 creating customer, got {resp.status_code}: {resp.text}"
+    )
 
     customer_data: dict[str, Any] = resp.json()
     customer_id: str = customer_data["id"]
@@ -51,7 +52,9 @@ async def test_full_billing_flow(client: httpx.AsyncClient) -> None:
     assert customer_data["country_code"] == "DE", "Customer country_code mismatch"
     assert customer_data["currency"] == "EUR", "Customer currency mismatch"
     assert customer_data["is_business"] is True, "Customer is_business mismatch"
-    assert customer_data["billing_email"] == "invoices@resolvai.eu", "Customer billing_email mismatch"
+    assert customer_data["billing_email"] == "invoices@resolvai.eu", (
+        "Customer billing_email mismatch"
+    )
     assert customer_data["vat_number"] == "DE123456789", "Customer vat_number mismatch"
 
     # ------------------------------------------------------------------
@@ -85,7 +88,9 @@ async def test_full_billing_flow(client: httpx.AsyncClient) -> None:
         ],
     }
     resp = await client.post("/v1/plans", json=plan_payload)
-    assert resp.status_code == 201, f"Expected 201 creating plan, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 201, (
+        f"Expected 201 creating plan, got {resp.status_code}: {resp.text}"
+    )
 
     plan_data: dict[str, Any] = resp.json()
     plan_id: str = plan_data["id"]
@@ -109,7 +114,9 @@ async def test_full_billing_flow(client: httpx.AsyncClient) -> None:
         "plan_id": plan_id,
     }
     resp = await client.post("/v1/subscriptions", json=subscription_payload)
-    assert resp.status_code == 201, f"Expected 201 creating subscription, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 201, (
+        f"Expected 201 creating subscription, got {resp.status_code}: {resp.text}"
+    )
 
     subscription_data: dict[str, Any] = resp.json()
     subscription_id: str = subscription_data["id"]
@@ -223,11 +230,15 @@ async def test_full_billing_flow(client: httpx.AsyncClient) -> None:
     assert fetched_customer["id"] == customer_id, "Fetched customer ID mismatch"
     assert fetched_customer["name"] == "ResolvAI GmbH", "Fetched customer name mismatch"
     assert fetched_customer["email"] == "billing@resolvai.eu", "Fetched customer email mismatch"
-    assert fetched_customer["external_id"] == "ext-resolvai-001", "Fetched customer external_id mismatch"
+    assert fetched_customer["external_id"] == "ext-resolvai-001", (
+        "Fetched customer external_id mismatch"
+    )
     assert fetched_customer["country_code"] == "DE", "Fetched customer country_code mismatch"
     assert fetched_customer["currency"] == "EUR", "Fetched customer currency mismatch"
     assert fetched_customer["is_business"] is True, "Fetched customer is_business mismatch"
-    assert fetched_customer["billing_email"] == "invoices@resolvai.eu", "Fetched customer billing_email mismatch"
+    assert fetched_customer["billing_email"] == "invoices@resolvai.eu", (
+        "Fetched customer billing_email mismatch"
+    )
     assert fetched_customer["vat_number"] == "DE123456789", "Fetched customer vat_number mismatch"
     assert fetched_customer["created_at"] is not None, "Customer created_at should be set"
     assert fetched_customer["updated_at"] is not None, "Customer updated_at should be set"

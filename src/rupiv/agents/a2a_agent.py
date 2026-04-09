@@ -149,7 +149,9 @@ async def validate_intent(state: A2AState) -> dict[str, Any]:
     # Validate currency
     currency = state.get("currency", "EUR").upper()
     if currency not in SUPPORTED_CURRENCIES:
-        return {"error": f"Currency {currency} not supported for A2A. Supported: {', '.join(sorted(SUPPORTED_CURRENCIES))}"}
+        return {
+            "error": f"Currency {currency} not supported for A2A. Supported: {', '.join(sorted(SUPPORTED_CURRENCIES))}",
+        }
 
     log.info("a2a_agent.intent_valid", intent_id=state["intent_id"])
     return {
@@ -313,7 +315,9 @@ async def execute_transfer(state: A2AState) -> dict[str, Any]:
         "transfer_id": transfer.psp_reference,
         "psp_reference": transfer.psp_reference,
         "settlement_status": "pending" if transfer.status != "Refused" else "failed",
-        "error": f"Transfer refused by Adyen: {transfer.psp_reference}" if transfer.status == "Refused" else None,
+        "error": f"Transfer refused by Adyen: {transfer.psp_reference}"
+        if transfer.status == "Refused"
+        else None,
     }
 
 
@@ -378,7 +382,7 @@ async def settle(state: A2AState) -> dict[str, Any]:
                 "role": "system",
                 "content": f"A2A settlement complete: {state['amount']} {state['currency']} "
                 f"from {state['buyer_agent_id']} to {state['seller_agent_id']}",
-            }
+            },
         ],
     }
 

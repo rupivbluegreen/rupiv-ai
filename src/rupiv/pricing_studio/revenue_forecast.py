@@ -9,9 +9,9 @@ ALL money arithmetic uses ``decimal.Decimal`` — never ``float``.
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass, field
-from datetime import date, timedelta
-from decimal import Decimal, ROUND_HALF_UP
+from dataclasses import dataclass
+from datetime import date
+from decimal import ROUND_HALF_UP, Decimal
 
 import structlog
 

@@ -131,7 +131,7 @@ def generate_schedule(
         return []
 
     monthly_amount = (total_allocated / Decimal(num_periods)).quantize(
-        _FOUR_PLACES, rounding=ROUND_HALF_UP
+        _FOUR_PLACES, rounding=ROUND_HALF_UP,
     )
 
     entries: list[RevenueScheduleEntry] = []

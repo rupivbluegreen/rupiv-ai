@@ -115,9 +115,7 @@ def identify_obligations(
         # Hybrid plans are decomposed into their constituent rules upstream,
         # so we should not see PricingModel.HYBRID here.  If we do, fall back
         # to platform_access / over_time.
-        ob_type, method = _MODEL_TO_OBLIGATION.get(
-            model, ("platform_access", "over_time")
-        )
+        ob_type, method = _MODEL_TO_OBLIGATION.get(model, ("platform_access", "over_time"))
 
         obligation = PerformanceObligation(
             id=uuid.uuid4(),

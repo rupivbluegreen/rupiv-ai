@@ -13,12 +13,10 @@ import structlog
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from rupiv.db import get_db
 from rupiv.models.event import Event, EventType, OutcomeStatus
-from rupiv.models.plan import PricingRule
 from rupiv.models.subscription import Subscription
 
 log: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
@@ -56,9 +54,7 @@ async def load_event(state: OutcomeValidationState) -> dict[str, Any]:
 
     try:
         async for session in get_db():
-            result = await session.execute(
-                select(Event).where(Event.id == state["event_id"])
-            )
+            result = await session.execute(select(Event).where(Event.id == state["event_id"]))
             event = result.scalar_one_or_none()
 
             if event is None:
@@ -76,7 +72,7 @@ async def load_event(state: OutcomeValidationState) -> dict[str, Any]:
                 sub_result = await session.execute(
                     select(Subscription)
                     .options(selectinload(Subscription.plan))
-                    .where(Subscription.id == event.subscription_id)
+                    .where(Subscription.id == event.subscription_id),
                 )
                 subscription = sub_result.scalar_one_or_none()
 
@@ -104,9 +100,8 @@ async def load_event(state: OutcomeValidationState) -> dict[str, Any]:
                 "messages": [
                     {
                         "role": "system",
-                        "content": f"Loaded event {state['event_id']} "
-                        f"(metric={event.metric})",
-                    }
+                        "content": f"Loaded event {state['event_id']} (metric={event.metric})",
+                    },
                 ],
             }
 
@@ -156,40 +151,32 @@ async def check_rules(state: OutcomeValidationState) -> dict[str, Any]:
             prop_key = condition_key[:-3]
             prop_val = properties.get(prop_key)
             if prop_val is None or not (float(prop_val) < float(expected_value)):
-                failed_conditions.append(
-                    f"{prop_key} ({prop_val}) is not < {expected_value}"
-                )
+                failed_conditions.append(f"{prop_key} ({prop_val}) is not < {expected_value}")
 
         elif condition_key.endswith("_lte"):
             prop_key = condition_key[:-4]
             prop_val = properties.get(prop_key)
             if prop_val is None or not (float(prop_val) <= float(expected_value)):
-                failed_conditions.append(
-                    f"{prop_key} ({prop_val}) is not <= {expected_value}"
-                )
+                failed_conditions.append(f"{prop_key} ({prop_val}) is not <= {expected_value}")
 
         elif condition_key.endswith("_gt"):
             prop_key = condition_key[:-3]
             prop_val = properties.get(prop_key)
             if prop_val is None or not (float(prop_val) > float(expected_value)):
-                failed_conditions.append(
-                    f"{prop_key} ({prop_val}) is not > {expected_value}"
-                )
+                failed_conditions.append(f"{prop_key} ({prop_val}) is not > {expected_value}")
 
         elif condition_key.endswith("_gte"):
             prop_key = condition_key[:-4]
             prop_val = properties.get(prop_key)
             if prop_val is None or not (float(prop_val) >= float(expected_value)):
-                failed_conditions.append(
-                    f"{prop_key} ({prop_val}) is not >= {expected_value}"
-                )
+                failed_conditions.append(f"{prop_key} ({prop_val}) is not >= {expected_value}")
 
         else:
             # Exact match
             prop_val = properties.get(condition_key)
             if prop_val != expected_value:
                 failed_conditions.append(
-                    f"{condition_key}: expected {expected_value!r}, got {prop_val!r}"
+                    f"{condition_key}: expected {expected_value!r}, got {prop_val!r}",
                 )
 
     if failed_conditions:
@@ -230,7 +217,7 @@ async def decide(state: OutcomeValidationState) -> dict[str, Any]:
                 "role": "system",
                 "content": f"Outcome decision: {result}"
                 + (f" — {state.get('rejection_reason')}" if state.get("rejection_reason") else ""),
-            }
+            },
         ],
     }
 
@@ -252,9 +239,7 @@ async def update_status(state: OutcomeValidationState) -> dict[str, Any]:
 
     try:
         async for session in get_db():
-            db_result = await session.execute(
-                select(Event).where(Event.id == event_id)
-            )
+            db_result = await session.execute(select(Event).where(Event.id == event_id))
             event = db_result.scalar_one_or_none()
 
             if event is not None:
@@ -275,7 +260,7 @@ async def update_status(state: OutcomeValidationState) -> dict[str, Any]:
                 {
                     "role": "system",
                     "content": f"Event {event_id} status updated to {result}",
-                }
+                },
             ],
         }
 

@@ -13,16 +13,13 @@ import pytest
 
 from rupiv.agents.a2a_agent import (
     A2AState,
+    _agent_accounts,
     a2a_graph,
-    compliance_check,
-    execute_transfer,
     initiate_a2a_payment,
     register_agent_account,
     reserve_funds,
-    set_policy_rules,
     settle,
     validate_intent,
-    _agent_accounts,
 )
 from rupiv.billing.adyen_client import AdyenTransfer
 from rupiv.billing.ledger import (
@@ -34,7 +31,6 @@ from rupiv.billing.ledger import (
     get_entries_by_transaction,
     settle_transaction,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -48,24 +44,24 @@ def _clear_state() -> None:
     _agent_accounts.clear()
 
 
-@pytest.fixture()
+@pytest.fixture
 def buyer_id() -> str:
     return "buyer-agent-001"
 
 
-@pytest.fixture()
+@pytest.fixture
 def seller_id() -> str:
     return "seller-agent-001"
 
 
-@pytest.fixture()
+@pytest.fixture
 def registered_agents(buyer_id: str, seller_id: str) -> None:
     """Register both buyer and seller agent accounts."""
     register_agent_account(buyer_id, iban="NL91ABNA0417164300", bic="ABNANL2A")
     register_agent_account(seller_id, iban="DE89370400440532013000", bic="COBADEFFXXX")
 
 
-@pytest.fixture()
+@pytest.fixture
 def base_state(buyer_id: str, seller_id: str) -> A2AState:
     """Return a minimal valid A2AState for testing individual nodes."""
     return A2AState(
@@ -98,7 +94,7 @@ class TestValidateIntent:
     """Tests for the validate_intent node."""
 
     async def test_valid_intent_passes(
-        self, base_state: A2AState, registered_agents: None
+        self, base_state: A2AState, registered_agents: None,
     ) -> None:
         """A valid intent with registered agents passes validation."""
         result = await validate_intent(base_state)
@@ -109,7 +105,7 @@ class TestValidateIntent:
         assert any("validated" in str(m.get("content", "")) for m in result.get("messages", []))
 
     async def test_zero_amount_rejected(
-        self, base_state: A2AState, registered_agents: None
+        self, base_state: A2AState, registered_agents: None,
     ) -> None:
         """An amount of zero is rejected."""
         base_state["amount"] = "0"
@@ -117,7 +113,7 @@ class TestValidateIntent:
         assert result.get("error") == "Amount must be positive"
 
     async def test_negative_amount_rejected(
-        self, base_state: A2AState, registered_agents: None
+        self, base_state: A2AState, registered_agents: None,
     ) -> None:
         """A negative amount is rejected."""
         base_state["amount"] = "-10.00"
@@ -125,32 +121,28 @@ class TestValidateIntent:
         assert result.get("error") == "Amount must be positive"
 
     async def test_invalid_amount_format(
-        self, base_state: A2AState, registered_agents: None
+        self, base_state: A2AState, registered_agents: None,
     ) -> None:
         """A non-numeric amount is rejected."""
         base_state["amount"] = "not-a-number"
         result = await validate_intent(base_state)
         assert result.get("error") == "Invalid amount format"
 
-    async def test_same_buyer_seller_rejected(
-        self, base_state: A2AState, buyer_id: str
-    ) -> None:
+    async def test_same_buyer_seller_rejected(self, base_state: A2AState, buyer_id: str) -> None:
         """Buyer and seller cannot be the same agent."""
         register_agent_account(buyer_id, iban="NL91ABNA0417164300")
         base_state["seller_agent_id"] = buyer_id
         result = await validate_intent(base_state)
         assert result.get("error") == "Buyer and seller cannot be the same agent"
 
-    async def test_unknown_buyer_rejected(
-        self, base_state: A2AState, seller_id: str
-    ) -> None:
+    async def test_unknown_buyer_rejected(self, base_state: A2AState, seller_id: str) -> None:
         """An unregistered buyer agent is rejected."""
         register_agent_account(seller_id, iban="DE89370400440532013000")
         result = await validate_intent(base_state)
         assert "not found" in (result.get("error") or "")
 
     async def test_unsupported_currency_rejected(
-        self, base_state: A2AState, registered_agents: None
+        self, base_state: A2AState, registered_agents: None,
     ) -> None:
         """A non-EUR currency is rejected for A2A MVP."""
         base_state["currency"] = "USD"
@@ -167,7 +159,7 @@ class TestInsufficientBalance:
     """Tests for reserve_funds when balance is insufficient."""
 
     async def test_buyer_with_zero_balance_rejected(
-        self, base_state: A2AState, registered_agents: None
+        self, base_state: A2AState, registered_agents: None,
     ) -> None:
         """A buyer with zero balance cannot reserve funds."""
         result = await reserve_funds(base_state)
@@ -357,9 +349,7 @@ class TestGraphCompilation:
             "execute_transfer",
             "settle",
         }
-        assert expected_nodes.issubset(node_names), (
-            f"Missing nodes: {expected_nodes - node_names}"
-        )
+        assert expected_nodes.issubset(node_names), f"Missing nodes: {expected_nodes - node_names}"
 
     async def test_full_graph_with_mocked_adyen(
         self,
@@ -386,9 +376,7 @@ class TestGraphCompilation:
             reference="test-ref",
         )
 
-        with patch(
-            "rupiv.agents.a2a_agent.get_adyen_client"
-        ) as mock_get_client:
+        with patch("rupiv.agents.a2a_agent.get_adyen_client") as mock_get_client:
             mock_client = AsyncMock()
             mock_client.create_sepa_transfer.return_value = mock_transfer
             mock_get_client.return_value = mock_client

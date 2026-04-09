@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import structlog
@@ -104,7 +104,7 @@ class UpgradeResponse(BaseModel):
 async def _get_or_create_free_plan(session: AsyncSession) -> Plan:
     """Return the Free plan, creating it if it does not exist."""
     result = await session.execute(
-        select(Plan).where(Plan.name == FREE_PLAN_NAME, Plan.is_active.is_(True))
+        select(Plan).where(Plan.name == FREE_PLAN_NAME, Plan.is_active.is_(True)),
     )
     plan: Plan | None = result.scalar_one_or_none()
 
@@ -169,9 +169,7 @@ async def signup(
     )
 
     # 1. Check for duplicate email
-    existing = await session.execute(
-        select(Customer).where(Customer.email == payload.email)
-    )
+    existing = await session.execute(select(Customer).where(Customer.email == payload.email))
     if existing.scalar_one_or_none() is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -196,7 +194,7 @@ async def signup(
     # 3. Find or create the Free plan, then create subscription
     free_plan = await _get_or_create_free_plan(session)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     subscription = Subscription(
         customer_id=customer.id,
         plan_id=free_plan.id,
@@ -250,9 +248,7 @@ async def setup_billing(
     )
 
     # Verify customer exists
-    result = await session.execute(
-        select(Customer).where(Customer.id == payload.customer_id)
-    )
+    result = await session.execute(select(Customer).where(Customer.id == payload.customer_id))
     customer: Customer | None = result.scalar_one_or_none()
     if customer is None:
         raise HTTPException(
@@ -297,9 +293,7 @@ async def onboarding_status(
     logger.info("onboarding_status", customer_id=str(customer_id))
 
     # Customer
-    cust_result = await session.execute(
-        select(Customer).where(Customer.id == customer_id)
-    )
+    cust_result = await session.execute(select(Customer).where(Customer.id == customer_id))
     has_customer = cust_result.scalar_one_or_none() is not None
 
     # Subscription
@@ -307,7 +301,7 @@ async def onboarding_status(
         select(Subscription).where(
             Subscription.customer_id == customer_id,
             Subscription.status == SubscriptionStatus.ACTIVE,
-        )
+        ),
     )
     has_subscription = sub_result.scalar_one_or_none() is not None
 
@@ -316,7 +310,7 @@ async def onboarding_status(
         select(ApiKey).where(
             ApiKey.customer_id == customer_id,
             ApiKey.is_active.is_(True),
-        )
+        ),
     )
     has_api_key = key_result.scalar_one_or_none() is not None
 
@@ -325,9 +319,7 @@ async def onboarding_status(
     has_payment_method = False
     if has_customer:
         cust = (
-            await session.execute(
-                select(Customer).where(Customer.id == customer_id)
-            )
+            await session.execute(select(Customer).where(Customer.id == customer_id))
         ).scalar_one()
         if cust.metadata_ and cust.metadata_.get("payment_method_id"):
             has_payment_method = True
@@ -338,7 +330,7 @@ async def onboarding_status(
         from rupiv.models.event import Event  # noqa: F811
 
         evt_result = await session.execute(
-            select(Event).where(Event.customer_id == customer_id).limit(1)
+            select(Event).where(Event.customer_id == customer_id).limit(1),
         )
         has_first_event = evt_result.scalar_one_or_none() is not None
     except Exception:
@@ -376,9 +368,7 @@ async def upgrade(
     )
 
     # Verify customer
-    cust_result = await session.execute(
-        select(Customer).where(Customer.id == payload.customer_id)
-    )
+    cust_result = await session.execute(select(Customer).where(Customer.id == payload.customer_id))
     if cust_result.scalar_one_or_none() is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -387,7 +377,7 @@ async def upgrade(
 
     # Verify target plan
     plan_result = await session.execute(
-        select(Plan).where(Plan.id == payload.plan_id, Plan.is_active.is_(True))
+        select(Plan).where(Plan.id == payload.plan_id, Plan.is_active.is_(True)),
     )
     if plan_result.scalar_one_or_none() is None:
         raise HTTPException(
@@ -400,7 +390,7 @@ async def upgrade(
         select(Subscription).where(
             Subscription.customer_id == payload.customer_id,
             Subscription.status == SubscriptionStatus.ACTIVE,
-        )
+        ),
     )
     old_sub: Subscription | None = sub_result.scalar_one_or_none()
     if old_sub is None:
@@ -410,7 +400,7 @@ async def upgrade(
         )
 
     # Cancel old subscription
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     old_sub.status = SubscriptionStatus.CANCELED
     old_sub.canceled_at = now
     await session.flush()

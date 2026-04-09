@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Literal
 
 import structlog
@@ -78,7 +78,7 @@ def check_threshold(
     pct_used = Decimal("0")
     if limit > Decimal("0"):
         pct_used = (current_value / limit * Decimal("100")).quantize(
-            _FOUR_PLACES, rounding=ROUND_HALF_UP
+            _FOUR_PLACES, rounding=ROUND_HALF_UP,
         )
 
     result = ThresholdResult(

@@ -29,8 +29,28 @@ router = APIRouter(tags=["simulate"])
 class SimulateRequest(BaseModel):
     """Request body for POST /v1/simulate."""
 
-    plan_id: uuid.UUID
-    scenario: SimulationScenario
+    plan_id: uuid.UUID = Field(
+        ..., example="b1c2d3e4-5f67-4a89-b012-3c4d5e6f7a8b",
+    )
+    scenario: SimulationScenario = Field(
+        ...,
+        example={
+            "pricing_rules": [
+                {
+                    "metric": "ticket_resolved",
+                    "price_per_outcome": 1.50,
+                    "billable_when": {
+                        "csat_score_gte": 4.0,
+                        "escalated": False,
+                    },
+                },
+            ],
+            "date_range": {
+                "start": "2026-01-01",
+                "end": "2026-03-31",
+            },
+        },
+    )
 
 
 class SimulateResponse(BaseModel):

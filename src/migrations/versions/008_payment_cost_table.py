@@ -7,12 +7,11 @@ Create Date: 2026-04-09
 
 from __future__ import annotations
 
-from typing import Sequence
+from collections.abc import Sequence
 
 import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
-
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic
 revision: str = "008_payment_cost_table"
@@ -54,12 +53,8 @@ def upgrade() -> None:
     )
 
     op.create_index("ix_payment_cost_records_psp", "payment_cost_records", ["psp"])
-    op.create_index(
-        "ix_payment_cost_records_created_at", "payment_cost_records", ["created_at"]
-    )
-    op.create_index(
-        "ix_payment_cost_records_invoice_id", "payment_cost_records", ["invoice_id"]
-    )
+    op.create_index("ix_payment_cost_records_created_at", "payment_cost_records", ["created_at"])
+    op.create_index("ix_payment_cost_records_invoice_id", "payment_cost_records", ["invoice_id"])
 
 
 def downgrade() -> None:

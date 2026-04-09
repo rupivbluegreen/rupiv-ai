@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any
 
 import httpx
-import pytest
 
 
 async def test_customer_lifecycle(client: httpx.AsyncClient) -> None:
@@ -165,7 +164,9 @@ async def test_customer_lifecycle(client: httpx.AsyncClient) -> None:
         f"Expected 200 listing subscriptions, got {resp.status_code}: {resp.text}"
     )
     subs_list: dict[str, Any] = resp.json()
-    assert subs_list["total"] == 1, f"Expected 1 subscription for customer, got {subs_list['total']}"
+    assert subs_list["total"] == 1, (
+        f"Expected 1 subscription for customer, got {subs_list['total']}"
+    )
     assert subs_list["items"][0]["status"] == "canceled", (
         "Listed subscription should show canceled status"
     )

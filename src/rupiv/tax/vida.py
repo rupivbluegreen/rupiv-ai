@@ -16,8 +16,8 @@ TODO(2028): Implement the ViDA "deemed supplier" rules for platform operators.
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 import structlog
@@ -69,7 +69,7 @@ class ViDAReporter:
         report = ViDAReport(
             report_id=str(uuid.uuid4()),
             status="stub",
-            submitted_at=datetime.now(timezone.utc),
+            submitted_at=datetime.now(UTC),
         )
 
         self._reports.append(report)

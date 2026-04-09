@@ -53,7 +53,7 @@ def _get_default_client() -> Client:
     if _default_client is None:
         raise RuntimeError(
             "No default client configured. "
-            "Call rupiv.init(api_key=...) or use rupiv.Client() directly."
+            "Call rupiv.init(api_key=...) or use rupiv.Client() directly.",
         )
     return _default_client
 

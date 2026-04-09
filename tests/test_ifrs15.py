@@ -11,10 +11,8 @@ from datetime import date
 from decimal import Decimal
 from unittest.mock import MagicMock
 
-import pytest
-
 from rupiv.models.plan import PricingModel
-from rupiv.revenue_recognition.allocation import AllocationResult, allocate_transaction_price
+from rupiv.revenue_recognition.allocation import allocate_transaction_price
 from rupiv.revenue_recognition.journal import JournalEntry, generate_journal_entries
 from rupiv.revenue_recognition.obligations import (
     PerformanceObligation,
@@ -28,7 +26,6 @@ from rupiv.revenue_recognition.schedules import (
     generate_schedule,
 )
 from rupiv.revenue_recognition.variable_consideration import (
-    VariableEstimate,
     constrain_estimate,
     estimate_variable_consideration,
 )
@@ -313,17 +310,13 @@ class TestVariableConsideration:
 
     def test_constrain_estimate_above_threshold(self) -> None:
         """No constraint when confidence >= threshold."""
-        amount, applied = constrain_estimate(
-            Decimal("1000"), Decimal("0.90"), Decimal("0.80")
-        )
+        amount, applied = constrain_estimate(Decimal("1000"), Decimal("0.90"), Decimal("0.80"))
         assert amount == Decimal("1000")
         assert applied is False
 
     def test_constrain_estimate_below_threshold(self) -> None:
         """Constraint applied when confidence < threshold."""
-        amount, applied = constrain_estimate(
-            Decimal("1000"), Decimal("0.60"), Decimal("0.80")
-        )
+        amount, applied = constrain_estimate(Decimal("1000"), Decimal("0.60"), Decimal("0.80"))
         assert amount == Decimal("600.0000")
         assert applied is True
 

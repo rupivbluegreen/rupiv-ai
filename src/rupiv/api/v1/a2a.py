@@ -10,7 +10,6 @@ from __future__ import annotations
 import uuid
 from decimal import Decimal
 from enum import Enum
-from typing import Any
 
 import structlog
 from fastapi import APIRouter, HTTPException, status
@@ -42,12 +41,31 @@ class A2AIntentStatus(str, Enum):
 class A2AIntentCreate(BaseModel):
     """Request body for creating an A2A payment intent."""
 
-    from_agent_id: uuid.UUID = Field(..., description="Buyer agent identifier")
-    to_agent_id: uuid.UUID = Field(..., description="Seller agent identifier")
-    amount: Decimal = Field(..., gt=Decimal("0"), decimal_places=4)
-    currency: str = Field(default="EUR", max_length=3)
-    reason: str = Field(..., description="Purpose of the payment, e.g. 'data_enrichment'")
-    idempotency_key: str
+    from_agent_id: uuid.UUID = Field(
+        ...,
+        description="Buyer agent identifier",
+        example="a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+    )
+    to_agent_id: uuid.UUID = Field(
+        ...,
+        description="Seller agent identifier",
+        example="f6e5d4c3-b2a1-4098-7654-3210fedcba98",
+    )
+    amount: Decimal = Field(
+        ...,
+        gt=Decimal("0"),
+        decimal_places=4,
+        example="24.5000",
+    )
+    currency: str = Field(default="EUR", max_length=3, example="EUR")
+    reason: str = Field(
+        ...,
+        description="Purpose of the payment, e.g. 'data_enrichment'",
+        example="data_enrichment",
+    )
+    idempotency_key: str = Field(
+        ..., example="a2a-20260409-nl-de-7f3a1b",
+    )
 
 
 class A2AIntentResponse(BaseModel):

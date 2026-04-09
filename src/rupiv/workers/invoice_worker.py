@@ -8,9 +8,8 @@ Run as a standalone process::
 from __future__ import annotations
 
 import asyncio
-import json
 import signal
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -21,20 +20,24 @@ from sqlalchemy.orm import selectinload
 
 from rupiv.billing.aggregation import aggregate_outcomes, aggregate_usage
 from rupiv.billing.invoicing import Invoice as InvoiceDomain
-from rupiv.billing.invoicing import TaxInfo, calculate_vat, generate_invoice
+from rupiv.billing.invoicing import TaxInfo, generate_invoice
 from rupiv.billing.pricing import (
-    LineItem,
     PricingEngine,
     PricingModel,
-    PricingRule as PricingRuleDomain,
-    Subscription as SubscriptionDomain,
     TierBracket,
+)
+from rupiv.billing.pricing import (
+    PricingRule as PricingRuleDomain,
+)
+from rupiv.billing.pricing import (
+    Subscription as SubscriptionDomain,
 )
 from rupiv.config import get_settings
 from rupiv.db import _get_session_factory
 from rupiv.models.customer import Customer
 from rupiv.models.invoice import Invoice, InvoiceLineItem, InvoiceStatus
-from rupiv.models.plan import PricingModel as PlanPricingModel, PricingRule
+from rupiv.models.plan import PricingModel as PlanPricingModel
+from rupiv.models.plan import PricingRule
 from rupiv.models.subscription import Subscription, SubscriptionStatus
 
 log: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
@@ -46,6 +49,7 @@ POLL_INTERVAL_SECONDS: int = 60
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _build_pricing_rule_domain(rule: PricingRule) -> PricingRuleDomain:
     """Convert a SQLAlchemy PricingRule to the pricing engine domain object."""
@@ -68,11 +72,13 @@ def _build_pricing_rule_domain(rule: PricingRule) -> PricingRuleDomain:
         metric=rule.metric,
         amount=Decimal(str(rule.flat_amount)) if rule.flat_amount is not None else None,
         unit_amount=Decimal(str(rule.unit_amount)) if rule.unit_amount is not None else None,
-        price_per_outcome=Decimal(str(rule.unit_amount)) if (
-            rule.pricing_model == PlanPricingModel.OUTCOME and rule.unit_amount is not None
-        ) else None,
+        price_per_outcome=Decimal(str(rule.unit_amount))
+        if (rule.pricing_model == PlanPricingModel.OUTCOME and rule.unit_amount is not None)
+        else None,
         billable_when=outcome_rules.get("billable_when"),
-        cap_per_period=Decimal(str(outcome_rules["cap_per_period"])) if outcome_rules.get("cap_per_period") else None,
+        cap_per_period=Decimal(str(outcome_rules["cap_per_period"]))
+        if outcome_rules.get("cap_per_period")
+        else None,
         tiers=tiers,
     )
 
@@ -136,6 +142,7 @@ def _next_period_end(current_end: datetime, interval_months: int = 1) -> datetim
         year += 1
     # Preserve the day-of-month, clamping to last day
     import calendar
+
     max_day = calendar.monthrange(year, month)[1]
     day = min(current_end.day, max_day)
     return current_end.replace(year=year, month=month, day=day)
@@ -145,13 +152,14 @@ def _next_period_end(current_end: datetime, interval_months: int = 1) -> datetim
 # Core logic
 # ---------------------------------------------------------------------------
 
+
 async def generate_period_invoices(session: AsyncSession) -> list[str]:
     """Find all active subscriptions past their period end and invoice them.
 
     Returns:
         List of generated invoice IDs (as strings).
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     log.info("invoice_worker.scan_start", as_of=now.isoformat())
 
     stmt = (
@@ -219,7 +227,7 @@ async def generate_period_invoices(session: AsyncSession) -> list[str]:
 
             # Generate the domain invoice
             domain_invoice: InvoiceDomain = await generate_invoice(
-                sub_domain, line_items, tax_info
+                sub_domain, line_items, tax_info,
             )
 
             # Persist the invoice to PostgreSQL
@@ -291,7 +299,7 @@ async def _advance_subscription_period(
         .values(
             current_period_start=new_start,
             current_period_end=new_end,
-        )
+        ),
     )
     log.info(
         "invoice_worker.period_advanced",
@@ -304,6 +312,7 @@ async def _advance_subscription_period(
 # ---------------------------------------------------------------------------
 # Worker loop
 # ---------------------------------------------------------------------------
+
 
 class InvoiceWorker:
     """Async worker that periodically generates invoices for due subscriptions.
@@ -358,7 +367,7 @@ class InvoiceWorker:
                         pubsub.get_message(ignore_subscribe_messages=True),
                         timeout=1.0,
                     )
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     message = None
 
                 triggered = message is not None and message.get("type") == "message"
@@ -390,6 +399,7 @@ class InvoiceWorker:
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     """Entry point for ``python -m rupiv.workers.invoice_worker``."""

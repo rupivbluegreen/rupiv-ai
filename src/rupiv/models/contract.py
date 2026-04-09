@@ -7,7 +7,7 @@ import uuid
 from datetime import date
 from typing import Any
 
-from sqlalchemy import Boolean, Date, ForeignKey, Index, Integer, Numeric, String
+from sqlalchemy import Boolean, Date, ForeignKey, Index, Integer, Numeric
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 

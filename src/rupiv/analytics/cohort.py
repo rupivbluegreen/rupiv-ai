@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import structlog
@@ -80,16 +80,16 @@ async def calculate_cohorts(
     for cohort_offset in range(num_months):
         cy, cm = _add_months(start_year, start_mo, cohort_offset)
         cohort_label = _month_label(cy, cm)
-        cohort_start = datetime(cy, cm, 1, tzinfo=timezone.utc)
+        cohort_start = datetime(cy, cm, 1, tzinfo=UTC)
         ny, nm = _add_months(cy, cm, 1)
-        cohort_end = datetime(ny, nm, 1, tzinfo=timezone.utc)
+        cohort_end = datetime(ny, nm, 1, tzinfo=UTC)
 
         # Customers created in this cohort month
         cust_q = select(Customer.id).where(
             and_(
                 Customer.created_at >= cohort_start,
                 Customer.created_at < cohort_end,
-            )
+            ),
         )
         cust_result = await session.execute(cust_q)
         cohort_customer_ids = [row[0] for row in cust_result.all()]
@@ -102,28 +102,25 @@ async def calculate_cohorts(
         remaining_months = num_months - cohort_offset
         for month_offset in range(remaining_months):
             check_y, check_m = _add_months(cy, cm, month_offset)
-            check_start = datetime(check_y, check_m, 1, tzinfo=timezone.utc)
+            check_start = datetime(check_y, check_m, 1, tzinfo=UTC)
             next_y, next_m = _add_months(check_y, check_m, 1)
-            check_end = datetime(next_y, next_m, 1, tzinfo=timezone.utc)
+            check_end = datetime(next_y, next_m, 1, tzinfo=UTC)
 
             # Count customers with active subs in the check month
-            retained_q = (
-                select(func.count(func.distinct(Subscription.customer_id)))
-                .where(
-                    and_(
-                        Subscription.customer_id.in_(cohort_customer_ids),
-                        Subscription.status == SubscriptionStatus.ACTIVE,
-                        Subscription.current_period_start < check_end,
-                        Subscription.current_period_end >= check_start,
-                    )
-                )
+            retained_q = select(func.count(func.distinct(Subscription.customer_id))).where(
+                and_(
+                    Subscription.customer_id.in_(cohort_customer_ids),
+                    Subscription.status == SubscriptionStatus.ACTIVE,
+                    Subscription.current_period_start < check_end,
+                    Subscription.current_period_end >= check_start,
+                ),
             )
             retained_result = await session.execute(retained_q)
             retained = retained_result.scalar() or 0
 
             retention_rate = (
                 (Decimal(str(retained)) / Decimal(str(cohort_size)) * Decimal("100")).quantize(
-                    Decimal("0.01")
+                    Decimal("0.01"),
                 )
                 if cohort_size > 0
                 else Decimal("0")
@@ -140,7 +137,7 @@ async def calculate_cohorts(
                         Subscription.status == SubscriptionStatus.ACTIVE,
                         Subscription.current_period_start < check_end,
                         Subscription.current_period_end >= check_start,
-                    )
+                    ),
                 )
             )
             mrr_result = await session.execute(mrr_q)
@@ -154,7 +151,7 @@ async def calculate_cohorts(
                     retained=retained,
                     retention_rate=retention_rate,
                     mrr=mrr,
-                )
+                ),
             )
 
     log.info(

@@ -7,12 +7,11 @@ Create Date: 2026-04-09
 
 from __future__ import annotations
 
-from typing import Sequence
+from collections.abc import Sequence
 
 import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
-
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = "007_quoting_tables"
@@ -166,9 +165,7 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id", name="pk_quote_line_items"),
     )
-    op.create_index(
-        "ix_quote_line_items_quote_id", "quote_line_items", ["quote_id"]
-    )
+    op.create_index("ix_quote_line_items_quote_id", "quote_line_items", ["quote_id"])
 
     # ------------------------------------------------------------------
     # 3. contracts
@@ -237,9 +234,7 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id", name="pk_contracts"),
     )
-    op.create_index(
-        "ix_contracts_subscription_id", "contracts", ["subscription_id"]
-    )
+    op.create_index("ix_contracts_subscription_id", "contracts", ["subscription_id"])
     op.create_index("ix_contracts_status", "contracts", ["status"])
     op.create_index(
         "ix_contracts_subscription_status",

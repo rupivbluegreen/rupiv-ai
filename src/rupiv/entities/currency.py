@@ -13,9 +13,7 @@ logger = structlog.get_logger(__name__)
 # ---------------------------------------------------------------------------
 # ECB base URL (for future live fetching)
 # ---------------------------------------------------------------------------
-ECB_RATE_URL = (
-    "https://data-api.ecb.europa.eu/service/data/EXR/D..EUR.SP00.A"
-)
+ECB_RATE_URL = "https://data-api.ecb.europa.eu/service/data/EXR/D..EUR.SP00.A"
 
 # ---------------------------------------------------------------------------
 # Hardcoded MVP rate table — rates are "1 EUR = X foreign currency"
@@ -41,9 +39,17 @@ _MVP_RATES: dict[str, Decimal] = {
 }
 
 # Currencies with 0 decimal places
-_ZERO_DECIMAL_CURRENCIES: frozenset[str] = frozenset({
-    "JPY", "KRW", "VND", "CLP", "ISK", "UGX", "RWF",
-})
+_ZERO_DECIMAL_CURRENCIES: frozenset[str] = frozenset(
+    {
+        "JPY",
+        "KRW",
+        "VND",
+        "CLP",
+        "ISK",
+        "UGX",
+        "RWF",
+    },
+)
 
 # Cache TTL: 24 hours in seconds
 _CACHE_TTL_SECONDS: int = 86_400
@@ -89,8 +95,7 @@ class ECBRateProvider:
     def _cache_is_fresh(self) -> bool:
         """Return True if the in-memory cache is younger than 24 h."""
         return (
-            bool(self._cache)
-            and (time.monotonic() - self._cache_timestamp) < _CACHE_TTL_SECONDS
+            bool(self._cache) and (time.monotonic() - self._cache_timestamp) < _CACHE_TTL_SECONDS
         )
 
     def _populate_cache(self, rates: dict[str, Decimal]) -> None:

@@ -91,7 +91,38 @@ class PricingRuleResponse(BaseModel):
 class PlanResponse(BaseModel):
     """Plan resource representation."""
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={
+            "example": {
+                "id": "b1c2d3e4-5f67-4a89-b012-3c4d5e6f7a8b",
+                "name": "Support AI Pro",
+                "description": "Outcome-based plan for AI support agents — per resolved ticket.",
+                "currency": "EUR",
+                "billing_period": "monthly",
+                "pricing_rules": [
+                    {
+                        "id": "c3d4e5f6-7890-4abc-def0-123456789abc",
+                        "model": "outcome",
+                        "metric": "ticket_resolved",
+                        "unit_price": "0.9900",
+                        "flat_amount": "0.0000",
+                        "tiers": None,
+                        "outcome_rules": {
+                            "billable_when": {
+                                "csat_score_gte": 3.0,
+                                "escalated": False,
+                                "resolution_time_lt": 300,
+                            },
+                            "cap_per_period": 50000,
+                        },
+                    },
+                ],
+                "created_at": "2026-02-10T14:30:00Z",
+                "updated_at": "2026-03-22T09:15:44Z",
+            },
+        },
+    )
 
     id: uuid.UUID
     name: str
@@ -119,7 +150,11 @@ def _pricing_rule_to_response(rule: PricingRule) -> PricingRuleResponse:
     """Map an ORM PricingRule to its API response schema."""
     return PricingRuleResponse(
         id=rule.id,
-        model=PricingModelEnum(rule.pricing_model.value if hasattr(rule.pricing_model, "value") else str(rule.pricing_model)),
+        model=PricingModelEnum(
+            rule.pricing_model.value
+            if hasattr(rule.pricing_model, "value")
+            else str(rule.pricing_model),
+        ),
         metric=rule.metric,
         unit_price=rule.unit_amount if rule.unit_amount is not None else Decimal("0"),
         flat_amount=rule.flat_amount if rule.flat_amount is not None else Decimal("0"),
@@ -169,7 +204,7 @@ def _build_pricing_rules(
                 tiers=pr.tiers,
                 outcome_rules=pr.outcome_rules,
                 billing_interval=pr.billing_interval or billing_period,
-            )
+            ),
         )
     return orm_rules
 
@@ -215,11 +250,7 @@ async def get_plan(
     """Return a single plan by ID."""
     logger.info("get_plan", plan_id=str(plan_id))
 
-    stmt = (
-        select(Plan)
-        .options(selectinload(Plan.pricing_rules))
-        .where(Plan.id == plan_id)
-    )
+    stmt = select(Plan).options(selectinload(Plan.pricing_rules)).where(Plan.id == plan_id)
     result = await db.execute(stmt)
     plan: Plan | None = result.scalar_one_or_none()
 
@@ -255,19 +286,13 @@ async def create_plan(
     await db.flush()
 
     if payload.pricing_rules:
-        rules = _build_pricing_rules(
-            payload.pricing_rules, plan.id, payload.billing_period
-        )
+        rules = _build_pricing_rules(payload.pricing_rules, plan.id, payload.billing_period)
         for rule in rules:
             db.add(rule)
         await db.flush()
 
     # Refresh with relationships loaded
-    stmt = (
-        select(Plan)
-        .options(selectinload(Plan.pricing_rules))
-        .where(Plan.id == plan.id)
-    )
+    stmt = select(Plan).options(selectinload(Plan.pricing_rules)).where(Plan.id == plan.id)
     result = await db.execute(stmt)
     plan = result.scalar_one()
 
@@ -283,11 +308,7 @@ async def update_plan(
     """Partially update a plan."""
     logger.info("update_plan", plan_id=str(plan_id))
 
-    stmt = (
-        select(Plan)
-        .options(selectinload(Plan.pricing_rules))
-        .where(Plan.id == plan_id)
-    )
+    stmt = select(Plan).options(selectinload(Plan.pricing_rules)).where(Plan.id == plan_id)
     result = await db.execute(stmt)
     plan: Plan | None = result.scalar_one_or_none()
 
@@ -312,19 +333,13 @@ async def update_plan(
         await db.flush()
 
         billing_period = payload.billing_period or "monthly"
-        new_rules = _build_pricing_rules(
-            payload.pricing_rules, plan.id, billing_period
-        )
+        new_rules = _build_pricing_rules(payload.pricing_rules, plan.id, billing_period)
         for rule in new_rules:
             db.add(rule)
         await db.flush()
 
         # Re-fetch to get fresh relationship state
-        stmt = (
-            select(Plan)
-            .options(selectinload(Plan.pricing_rules))
-            .where(Plan.id == plan.id)
-        )
+        stmt = select(Plan).options(selectinload(Plan.pricing_rules)).where(Plan.id == plan.id)
         result = await db.execute(stmt)
         plan = result.scalar_one()
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import structlog
@@ -52,8 +52,10 @@ async def calculate_outcome_metrics(
 
     Filters by *customer_id* and/or *metric* when provided.
     """
-    start_dt = datetime(period_start.year, period_start.month, period_start.day, tzinfo=timezone.utc)
-    end_dt = datetime(period_end.year, period_end.month, period_end.day, tzinfo=timezone.utc)
+    start_dt = datetime(
+        period_start.year, period_start.month, period_start.day, tzinfo=UTC,
+    )
+    end_dt = datetime(period_end.year, period_end.month, period_end.day, tzinfo=UTC)
 
     # Build filters
     filters = [
@@ -75,19 +77,19 @@ async def calculate_outcome_metrics(
                 case(
                     (Event.outcome_status == OutcomeStatus.VALIDATED, 1),
                     else_=0,
-                )
+                ),
             ).label("validated"),
             func.sum(
                 case(
                     (Event.outcome_status == OutcomeStatus.REJECTED, 1),
                     else_=0,
-                )
+                ),
             ).label("rejected"),
             func.sum(
                 case(
                     (Event.outcome_status == OutcomeStatus.PENDING, 1),
                     else_=0,
-                )
+                ),
             ).label("pending"),
         )
         .where(and_(*filters))
@@ -107,7 +109,7 @@ async def calculate_outcome_metrics(
 
         success_rate = (
             (Decimal(str(validated)) / Decimal(str(total)) * Decimal("100")).quantize(
-                Decimal("0.01")
+                Decimal("0.01"),
             )
             if total > 0
             else Decimal("0")
@@ -143,7 +145,7 @@ async def calculate_outcome_metrics(
                 success_rate=success_rate,
                 avg_value=avg_value,
                 total_revenue=total_revenue,
-            )
+            ),
         )
 
     log.info(

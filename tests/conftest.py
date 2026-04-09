@@ -25,7 +25,8 @@ os.environ.setdefault("CORS_ORIGINS", '["http://testserver"]')
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import JSON, String, event as sa_event
+from sqlalchemy import JSON
+from sqlalchemy import event as sa_event
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -82,7 +83,7 @@ def _test_settings() -> Settings:
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture()
+@pytest.fixture
 async def db_engine() -> AsyncIterator[AsyncEngine]:
     """Create an in-memory SQLite async engine with all tables."""
     engine = create_async_engine(TEST_DATABASE_URL, echo=False)
@@ -109,7 +110,7 @@ async def db_engine() -> AsyncIterator[AsyncEngine]:
     await engine.dispose()
 
 
-@pytest.fixture()
+@pytest.fixture
 async def db_session(db_engine: AsyncEngine) -> AsyncIterator[AsyncSession]:
     """Provide an async SQLAlchemy session backed by the test SQLite engine."""
     session_factory = async_sessionmaker(db_engine, expire_on_commit=False)
@@ -122,7 +123,7 @@ async def db_session(db_engine: AsyncEngine) -> AsyncIterator[AsyncSession]:
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture()
+@pytest.fixture
 async def app(
     db_engine: AsyncEngine,
 ) -> AsyncIterator[Any]:
@@ -162,7 +163,7 @@ async def app(
     test_app.dependency_overrides.clear()
 
 
-@pytest.fixture()
+@pytest.fixture
 async def client(app: Any) -> AsyncIterator[AsyncClient]:
     """Yield an ``httpx.AsyncClient`` wired to the test FastAPI app.
 
@@ -178,13 +179,13 @@ async def client(app: Any) -> AsyncIterator[AsyncClient]:
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture()
+@pytest.fixture
 def sample_customer_id() -> uuid.UUID:
     """A stable UUID for the sample customer."""
     return uuid.UUID("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
 
 
-@pytest.fixture()
+@pytest.fixture
 async def sample_customer(
     db_session: AsyncSession,
     sample_customer_id: uuid.UUID,
@@ -213,7 +214,7 @@ async def sample_customer(
     }
 
 
-@pytest.fixture()
+@pytest.fixture
 def sample_plan() -> dict[str, Any]:
     """Return a dictionary representing a sample billing plan."""
     return {
@@ -241,7 +242,7 @@ def sample_plan() -> dict[str, Any]:
     }
 
 
-@pytest.fixture()
+@pytest.fixture
 def sample_event(sample_customer_id: uuid.UUID) -> dict[str, Any]:
     """Return a dictionary representing a sample usage/outcome event payload."""
     return {

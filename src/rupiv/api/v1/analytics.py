@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from rupiv.analytics.cohort import CohortEntry, calculate_cohorts
-from rupiv.analytics.mrr_arr import MRRResult, calculate_arr, calculate_churn_rate, calculate_mrr
+from rupiv.analytics.mrr_arr import MRRResult, calculate_churn_rate, calculate_mrr
 from rupiv.analytics.outcome_metrics import calculate_outcome_metrics
 from rupiv.analytics.payment_costs import calculate_payment_costs, get_cost_comparison
 from rupiv.analytics.routing_optimizer import get_recommendations
@@ -111,7 +111,9 @@ class RoutingRecommendationResponse(BaseModel):
 
 @router.get("/mrr", response_model=MRRResponse, summary="Get MRR breakdown")
 async def get_mrr(
-    as_of_date: date | None = Query(default=None, description="Date within the target month (default: today)"),
+    as_of_date: date | None = Query(
+        default=None, description="Date within the target month (default: today)",
+    ),
     db: AsyncSession = Depends(get_db),
 ) -> MRRResponse:
     """Return Monthly Recurring Revenue breakdown for the month containing *as_of_date*."""
@@ -133,7 +135,9 @@ async def get_mrr(
 
 @router.get("/arr", response_model=ARRResponse, summary="Get ARR")
 async def get_arr(
-    as_of_date: date | None = Query(default=None, description="Date within the target month (default: today)"),
+    as_of_date: date | None = Query(
+        default=None, description="Date within the target month (default: today)",
+    ),
     db: AsyncSession = Depends(get_db),
 ) -> ARRResponse:
     """Return Annual Recurring Revenue (MRR * 12)."""
@@ -172,7 +176,9 @@ async def get_churn(
     )
 
 
-@router.get("/payment-costs", response_model=list[PaymentCostResponse], summary="Get payment costs")
+@router.get(
+    "/payment-costs", response_model=list[PaymentCostResponse], summary="Get payment costs",
+)
 async def get_payment_costs(
     period_start: date = Query(..., description="Start of the measurement period"),
     period_end: date = Query(..., description="End of the measurement period"),
@@ -207,7 +213,7 @@ async def get_payment_costs(
                 total_fees=summary.total_fees,
                 blended_rate=summary.blended_rate,
                 by_method=by_method,
-            )
+            ),
         )
 
     return results
@@ -235,12 +241,7 @@ async def get_payment_cost_recommendations(
     # Serialize Decimal values to float-friendly dicts for JSON response
     serialized: list[dict[str, Any]] = []
     for rec in recommendations:
-        serialized.append(
-            {
-                k: float(v) if isinstance(v, Decimal) else v
-                for k, v in rec.items()
-            }
-        )
+        serialized.append({k: float(v) if isinstance(v, Decimal) else v for k, v in rec.items()})
 
     return RoutingRecommendationResponse(recommendations=serialized)
 

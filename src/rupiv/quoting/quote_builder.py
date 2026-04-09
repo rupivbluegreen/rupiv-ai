@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import structlog
@@ -47,22 +47,18 @@ async def build_quote(
     overrides = overrides or {}
 
     # Load customer
-    result = await session.execute(
-        select(Customer).where(Customer.id == customer_id)
-    )
+    result = await session.execute(select(Customer).where(Customer.id == customer_id))
     customer = result.scalar_one_or_none()
     if customer is None:
         raise ValueError(f"Customer {customer_id} not found")
 
     # Load plan (pricing_rules come via selectin)
-    result = await session.execute(
-        select(Plan).where(Plan.id == plan_id)
-    )
+    result = await session.execute(select(Plan).where(Plan.id == plan_id))
     plan = result.scalar_one_or_none()
     if plan is None:
         raise ValueError(f"Plan {plan_id} not found")
 
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
 
     quote = Quote(
         customer_id=customer_id,
@@ -170,9 +166,7 @@ async def recalculate_quote(
     Raises:
         ValueError: If quote is not found or not in a recalculable state.
     """
-    result = await session.execute(
-        select(Quote).where(Quote.id == quote_id)
-    )
+    result = await session.execute(select(Quote).where(Quote.id == quote_id))
     quote = result.scalar_one_or_none()
     if quote is None:
         raise ValueError(f"Quote {quote_id} not found")
