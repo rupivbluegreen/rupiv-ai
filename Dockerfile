@@ -5,12 +5,12 @@ RUN pip install --no-cache-dir uv
 
 WORKDIR /app
 
+# Copy project metadata and source for install
 COPY pyproject.toml ./
-RUN uv pip install --system --no-cache -r pyproject.toml 2>/dev/null || \
-    uv pip install --system --no-cache . 2>/dev/null || true
+COPY src/ ./src/
 
-COPY . .
-RUN uv pip install --system --no-cache . 2>/dev/null || true
+# Install the package and all dependencies into the system Python
+RUN uv pip install --system --no-cache .
 
 
 # Stage 2: Runtime — lean image, non-root user

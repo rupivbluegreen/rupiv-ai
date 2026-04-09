@@ -21,8 +21,8 @@ help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
 
-dev: ## Start the dev server with hot-reload
-	$(UVICORN) rupiv.main:app --reload --host 0.0.0.0 --port 8000
+dev: ## Start all services via docker-compose with hot-reload
+	docker compose up --build
 
 test: ## Run the test suite with coverage
 	$(PYTEST) --cov=rupiv --cov-report=term-missing

@@ -1,86 +1,68 @@
-"""Invoice generation with EU VAT support for Rupiv.ai."""
+"""Invoice generation with EU VAT support for Rupiv.ai.
+
+Creates SQLAlchemy ORM ``Invoice`` and ``InvoiceLineItem`` objects,
+calculates EU VAT (all 27 member states), and handles B2B reverse charge.
+"""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+import secrets
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
-from uuid import uuid4
+from typing import Any
 
 import structlog
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from rupiv.billing.pricing import LineItem
+from rupiv.models.invoice import (
+    Invoice,
+    InvoiceLineItem,
+    InvoiceStatus,
+    TaxType,
+)
 
-log = structlog.get_logger(__name__)
+log: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
 # ---------------------------------------------------------------------------
-# EU VAT standard rates (2026 approximations — keep up-to-date)
+# EU VAT standard rates (all 27 member states, 2026 rates)
 # ---------------------------------------------------------------------------
 
 EU_VAT_RATES: dict[str, Decimal] = {
-    "AT": Decimal("20"),
-    "BE": Decimal("21"),
-    "BG": Decimal("20"),
-    "HR": Decimal("25"),
-    "CY": Decimal("19"),
-    "CZ": Decimal("21"),
-    "DK": Decimal("25"),
-    "EE": Decimal("22"),
-    "FI": Decimal("25.5"),
-    "FR": Decimal("20"),
-    "DE": Decimal("19"),
-    "GR": Decimal("24"),
-    "HU": Decimal("27"),
-    "IE": Decimal("23"),
-    "IT": Decimal("22"),
-    "LV": Decimal("21"),
-    "LT": Decimal("21"),
-    "LU": Decimal("17"),
-    "MT": Decimal("18"),
-    "NL": Decimal("21"),
-    "PL": Decimal("23"),
-    "PT": Decimal("23"),
-    "RO": Decimal("19"),
-    "SK": Decimal("23"),
-    "SI": Decimal("22"),
-    "ES": Decimal("21"),
-    "SE": Decimal("25"),
+    "AT": Decimal("20"),     # Austria
+    "BE": Decimal("21"),     # Belgium
+    "BG": Decimal("20"),     # Bulgaria
+    "HR": Decimal("25"),     # Croatia
+    "CY": Decimal("19"),     # Cyprus
+    "CZ": Decimal("21"),     # Czech Republic
+    "DK": Decimal("25"),     # Denmark
+    "EE": Decimal("22"),     # Estonia
+    "FI": Decimal("25.5"),   # Finland
+    "FR": Decimal("20"),     # France
+    "DE": Decimal("19"),     # Germany
+    "GR": Decimal("24"),     # Greece
+    "HU": Decimal("27"),     # Hungary
+    "IE": Decimal("23"),     # Ireland
+    "IT": Decimal("22"),     # Italy
+    "LV": Decimal("21"),     # Latvia
+    "LT": Decimal("21"),     # Lithuania
+    "LU": Decimal("17"),     # Luxembourg
+    "MT": Decimal("18"),     # Malta
+    "NL": Decimal("21"),     # Netherlands
+    "PL": Decimal("23"),     # Poland
+    "PT": Decimal("23"),     # Portugal
+    "RO": Decimal("19"),     # Romania
+    "SK": Decimal("23"),     # Slovakia
+    "SI": Decimal("22"),     # Slovenia
+    "ES": Decimal("21"),     # Spain
+    "SE": Decimal("25"),     # Sweden
 }
 
 _TWO_PLACES = Decimal("0.01")
 _HUNDRED = Decimal("100")
 
-# ---------------------------------------------------------------------------
-# Domain types
-# ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class TaxInfo:
-    """Tax context for invoice generation."""
-
-    country_code: str
-    is_business: bool
-    vat_number: str | None = None
-    seller_country: str = "NL"  # Rupiv is based in the Netherlands
-
-
-@dataclass
-class Invoice:
-    """Generated invoice."""
-
-    invoice_id: str
-    customer_id: str
-    subscription_id: str
-    line_items: list[LineItem]
-    subtotal: Decimal
-    tax_amount: Decimal
-    tax_type: str  # "standard" | "reverse_charge" | "none"
-    total: Decimal
-    currency: str
-    issued_at: datetime
-    status: str = "draft"
-    metadata: dict[str, str] = field(default_factory=dict)
+# Rupiv B.V. is based in the Netherlands.
+SELLER_COUNTRY = "NL"
 
 
 # ---------------------------------------------------------------------------
@@ -92,42 +74,62 @@ def calculate_vat(
     country_code: str,
     is_business: bool,
     subtotal: Decimal,
-    seller_country: str = "NL",
-) -> tuple[Decimal, str]:
+    seller_country: str = SELLER_COUNTRY,
+) -> tuple[Decimal, Decimal, TaxType | None]:
     """Compute VAT for a transaction.
 
     Rules implemented:
-    1. Non-EU buyer              -> no VAT              (``"none"``)
-    2. EU B2B cross-border       -> reverse charge       (``"reverse_charge"``)
-    3. EU B2C or domestic B2B    -> standard rate of
-       *buyer* country (B2C) or *seller* country (domestic)
+    1. Non-EU buyer              -> no VAT             (``None``)
+    2. EU B2B cross-border       -> reverse charge      (``TaxType.REVERSE_CHARGE``)
+    3. EU B2C or domestic B2B/B2C -> standard rate of
+       *buyer* country (B2C cross-border / OSS) or
+       *seller* country (domestic)
+
+    Args:
+        country_code: ISO 3166-1 alpha-2 code of the buyer.
+        is_business: Whether the buyer is a VAT-registered business.
+        subtotal: Invoice subtotal before tax.
+        seller_country: ISO 3166-1 alpha-2 code of the seller.
 
     Returns:
-        ``(tax_amount, tax_type)`` where *tax_type* is one of
-        ``"standard"``, ``"reverse_charge"``, ``"none"``.
+        ``(tax_amount, tax_rate, tax_type)`` where *tax_rate* is as a
+        percentage (e.g. ``Decimal("21")`` for 21 %) and *tax_type* is
+        ``None`` when outside the EU.
     """
     buyer_in_eu = country_code in EU_VAT_RATES
 
     if not buyer_in_eu:
-        # Outside EU — no VAT
-        return Decimal("0"), "none"
+        return Decimal("0"), Decimal("0"), None
 
     cross_border = country_code != seller_country
 
     if is_business and cross_border:
-        # EU B2B cross-border: reverse charge, zero-rated
-        return Decimal("0"), "reverse_charge"
+        # EU B2B cross-border: reverse charge — zero-rated
+        return Decimal("0"), Decimal("0"), TaxType.REVERSE_CHARGE
 
-    # EU B2C, or domestic (same-country) sale
+    # EU B2C cross-border (OSS) or domestic sale
     if cross_border:
-        # B2C cross-border: apply buyer country rate (OSS)
         rate = EU_VAT_RATES[country_code]
     else:
-        # Domestic: apply seller country rate
         rate = EU_VAT_RATES[seller_country]
 
     tax = (subtotal * rate / _HUNDRED).quantize(_TWO_PLACES, rounding=ROUND_HALF_UP)
-    return tax, "standard"
+    return tax, rate, TaxType.STANDARD
+
+
+# ---------------------------------------------------------------------------
+# Invoice number generation
+# ---------------------------------------------------------------------------
+
+
+def _generate_invoice_number(period_start: datetime) -> str:
+    """Generate a unique invoice number in format ``INV-YYYYMM-XXXXX``.
+
+    The random suffix uses 5 uppercase hex characters for uniqueness.
+    """
+    ym = period_start.strftime("%Y%m")
+    suffix = secrets.token_hex(3)[:5].upper()
+    return f"INV-{ym}-{suffix}"
 
 
 # ---------------------------------------------------------------------------
@@ -136,52 +138,87 @@ def calculate_vat(
 
 
 async def generate_invoice(
-    subscription: object,
+    session: AsyncSession,
+    subscription: Any,
     line_items: list[LineItem],
-    tax_info: TaxInfo,
     currency: str = "EUR",
 ) -> Invoice:
-    """Create an invoice from computed line items and tax info.
+    """Create an Invoice ORM object with its line items.
 
-    The *subscription* object must expose ``subscription_id`` and
-    ``customer_id`` attributes.
+    Args:
+        session: An active SQLAlchemy async session.
+        subscription: An ORM ``Subscription`` with eagerly loaded
+            ``customer`` and ``plan`` relationships.
+        line_items: Calculated ``LineItem`` dataclasses from the pricing
+            engine.
+        currency: ISO 4217 currency code (default ``"EUR"``).
 
     Returns:
-        A fully populated ``Invoice`` in ``"draft"`` status.
+        A persisted (flushed) ``Invoice`` ORM object in ``draft`` status.
     """
+    customer = subscription.customer
+    period_start: datetime = subscription.current_period_start
+    period_end: datetime = subscription.current_period_end
+    due_date = (period_end + timedelta(days=30)).date()
+
+    # -- Subtotal --
     subtotal = sum(
         (item.amount for item in line_items),
         Decimal("0"),
     ).quantize(_TWO_PLACES, rounding=ROUND_HALF_UP)
 
-    tax_amount, tax_type = calculate_vat(
-        country_code=tax_info.country_code,
-        is_business=tax_info.is_business,
+    # -- VAT --
+    tax_amount, tax_rate, tax_type = calculate_vat(
+        country_code=customer.country_code,
+        is_business=customer.is_business,
         subtotal=subtotal,
-        seller_country=tax_info.seller_country,
     )
 
     total = (subtotal + tax_amount).quantize(_TWO_PLACES, rounding=ROUND_HALF_UP)
 
+    # -- Invoice ORM --
     invoice = Invoice(
-        invoice_id=str(uuid4()),
-        customer_id=getattr(subscription, "customer_id", ""),
-        subscription_id=getattr(subscription, "subscription_id", ""),
-        line_items=line_items,
+        customer_id=subscription.customer_id,
+        subscription_id=subscription.id,
+        invoice_number=_generate_invoice_number(period_start),
+        status=InvoiceStatus.DRAFT,
         subtotal=subtotal,
         tax_amount=tax_amount,
+        tax_rate=tax_rate / _HUNDRED if tax_rate else None,
         tax_type=tax_type,
         total=total,
         currency=currency,
-        issued_at=datetime.now(timezone.utc),
+        period_start=period_start,
+        period_end=period_end,
+        due_date=due_date,
     )
+    session.add(invoice)
+    # Flush to get the id assigned before creating line items.
+    await session.flush()
+
+    # -- Line item ORMs --
+    for item in line_items:
+        orm_item = InvoiceLineItem(
+            invoice_id=invoice.id,
+            description=item.description,
+            quantity=item.quantity,
+            unit_amount=item.unit_amount,
+            amount=item.amount,
+            metric=item.metric,
+            pricing_model=item.pricing_model.value,
+        )
+        session.add(orm_item)
+
+    await session.flush()
 
     log.info(
         "invoice.generated",
-        invoice_id=invoice.invoice_id,
+        invoice_id=str(invoice.id),
+        invoice_number=invoice.invoice_number,
+        customer_id=str(subscription.customer_id),
         subtotal=str(subtotal),
         tax_amount=str(tax_amount),
-        tax_type=tax_type,
+        tax_type=tax_type.value if tax_type else "none",
         total=str(total),
     )
     return invoice

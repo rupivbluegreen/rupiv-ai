@@ -1,17 +1,57 @@
-"""Payment execution stubs (Mollie integration) for Rupiv.ai."""
+"""Mollie payment integration for Rupiv.ai.
+
+Handles payment creation, status retrieval, refunds, invoice charging,
+and webhook processing via the Mollie v2 API.
+"""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from decimal import Decimal
+from typing import Any
 
+import httpx
 import structlog
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from rupiv.models.invoice import Invoice, InvoiceStatus
 
 log = structlog.get_logger(__name__)
+
+MOLLIE_BASE_URL = "https://api.mollie.com/v2"
 
 # ---------------------------------------------------------------------------
 # Domain types
 # ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class MolliePayment:
+    """Parsed representation of a Mollie payment resource."""
+
+    id: str
+    status: str
+    amount: Decimal
+    currency: str
+    description: str
+    redirect_url: str | None
+    webhook_url: str | None
+    metadata: dict[str, Any]
+    created_at: datetime
+
+
+@dataclass(frozen=True)
+class MollieRefund:
+    """Parsed representation of a Mollie refund resource."""
+
+    id: str
+    payment_id: str
+    amount: Decimal
+    currency: str
+    status: str
+    description: str
 
 
 @dataclass(frozen=True)
@@ -20,106 +60,277 @@ class PaymentResult:
 
     success: bool
     payment_id: str
+    checkout_url: str | None = None
     error: str | None = None
-
-
-@dataclass(frozen=True)
-class WebhookResult:
-    """Outcome of processing a Mollie webhook."""
-
-    verified: bool
-    payment_id: str
-    new_status: str
-    error: str | None = None
-
-
-@dataclass(frozen=True)
-class PaymentMethod:
-    """Reference to a stored payment method."""
-
-    method_id: str
-    provider: str  # e.g. "mollie"
-    type: str  # e.g. "ideal", "creditcard", "sepa_direct_debit"
 
 
 # ---------------------------------------------------------------------------
-# Stubs
+# Mollie API client
+# ---------------------------------------------------------------------------
+
+
+class MollieClient:
+    """Async wrapper around the Mollie v2 REST API."""
+
+    def __init__(self, api_key: str) -> None:
+        self._api_key = api_key
+        self._client = httpx.AsyncClient(
+            base_url=MOLLIE_BASE_URL,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            timeout=30.0,
+        )
+
+    # -- Payments ----------------------------------------------------------
+
+    async def create_payment(
+        self,
+        amount: Decimal,
+        currency: str,
+        description: str,
+        redirect_url: str,
+        webhook_url: str,
+        metadata: dict[str, Any],
+        idempotency_key: str | None = None,
+    ) -> MolliePayment:
+        """Create a new payment via ``POST /v2/payments``."""
+        body: dict[str, Any] = {
+            "amount": {
+                "value": f"{amount:.2f}",
+                "currency": currency,
+            },
+            "description": description,
+            "redirectUrl": redirect_url,
+            "webhookUrl": webhook_url,
+            "metadata": metadata,
+        }
+
+        headers: dict[str, str] = {}
+        if idempotency_key is not None:
+            headers["Idempotency-Key"] = idempotency_key
+
+        response = await self._client.post(
+            "/v2/payments",
+            json=body,
+            headers=headers,
+        )
+        response.raise_for_status()
+        data = response.json()
+
+        log.info(
+            "mollie.payment_created",
+            payment_id=data["id"],
+            status=data["status"],
+            amount=data["amount"]["value"],
+            currency=data["amount"]["currency"],
+        )
+
+        return _parse_payment(data)
+
+    async def get_payment(self, payment_id: str) -> MolliePayment:
+        """Retrieve a payment via ``GET /v2/payments/{id}``."""
+        response = await self._client.get(f"/v2/payments/{payment_id}")
+        response.raise_for_status()
+        data = response.json()
+        return _parse_payment(data)
+
+    # -- Refunds -----------------------------------------------------------
+
+    async def create_refund(
+        self,
+        payment_id: str,
+        amount: Decimal,
+        currency: str,
+        description: str,
+    ) -> MollieRefund:
+        """Create a refund via ``POST /v2/payments/{id}/refunds``."""
+        body: dict[str, Any] = {
+            "amount": {
+                "value": f"{amount:.2f}",
+                "currency": currency,
+            },
+            "description": description,
+        }
+
+        response = await self._client.post(
+            f"/v2/payments/{payment_id}/refunds",
+            json=body,
+        )
+        response.raise_for_status()
+        data = response.json()
+
+        log.info(
+            "mollie.refund_created",
+            refund_id=data["id"],
+            payment_id=payment_id,
+            amount=data["amount"]["value"],
+        )
+
+        return MollieRefund(
+            id=data["id"],
+            payment_id=payment_id,
+            amount=Decimal(data["amount"]["value"]),
+            currency=data["amount"]["currency"],
+            status=data["status"],
+            description=data.get("description", ""),
+        )
+
+    # -- Lifecycle ---------------------------------------------------------
+
+    async def close(self) -> None:
+        """Close the underlying HTTP client."""
+        await self._client.aclose()
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _parse_payment(data: dict[str, Any]) -> MolliePayment:
+    """Parse a Mollie payment JSON response into a ``MolliePayment``."""
+    return MolliePayment(
+        id=data["id"],
+        status=data["status"],
+        amount=Decimal(data["amount"]["value"]),
+        currency=data["amount"]["currency"],
+        description=data.get("description", ""),
+        redirect_url=data.get("redirectUrl"),
+        webhook_url=data.get("webhookUrl"),
+        metadata=data.get("metadata") or {},
+        created_at=datetime.fromisoformat(data["createdAt"]),
+    )
+
+
+def _format_amount(value: Decimal) -> str:
+    """Format a Decimal as a two-decimal-place string for Mollie."""
+    return f"{value:.2f}"
+
+
+# ---------------------------------------------------------------------------
+# Invoice charging
 # ---------------------------------------------------------------------------
 
 
 async def charge_invoice(
-    invoice: object,
-    payment_method: PaymentMethod,
+    mollie: MollieClient,
+    invoice: Invoice,
+    webhook_base_url: str,
+    redirect_url: str = "https://app.rupiv.ai/payments/complete",
 ) -> PaymentResult:
-    """Initiate a charge via Mollie for the given invoice.
+    """Create a Mollie payment for *invoice* and update its payment ID.
 
-    The *invoice* object must expose ``invoice_id``, ``total``, and
-    ``currency`` attributes.
-
-    This is a **stub** — in production it will call the Mollie Payments
-    API (``POST /v2/payments``).
-
-    Idempotency: the Mollie ``idempotencyKey`` is set to the
-    ``invoice_id`` so retries are safe.
+    Uses ``invoice.id`` (stringified) as the idempotency key so retries
+    are safe.
     """
-    invoice_id: str = getattr(invoice, "invoice_id", "")
-    total: Decimal = getattr(invoice, "total", Decimal("0"))
-    currency: str = getattr(invoice, "currency", "EUR")
+    idempotency_key = str(invoice.id)
+
+    try:
+        payment = await mollie.create_payment(
+            amount=Decimal(str(invoice.total)),
+            currency=invoice.currency,
+            description=f"Invoice {invoice.invoice_number}",
+            redirect_url=redirect_url,
+            webhook_url=f"{webhook_base_url}/v1/webhooks/mollie",
+            metadata={"invoice_id": idempotency_key},
+            idempotency_key=idempotency_key,
+        )
+    except httpx.HTTPStatusError as exc:
+        log.error(
+            "mollie.charge_failed",
+            invoice_id=idempotency_key,
+            status_code=exc.response.status_code,
+            detail=exc.response.text,
+        )
+        return PaymentResult(
+            success=False,
+            payment_id="",
+            error=f"Mollie API error: {exc.response.status_code}",
+        )
+
+    invoice.mollie_payment_id = payment.id
 
     log.info(
         "payment.charge_initiated",
-        invoice_id=invoice_id,
-        amount=str(total),
-        currency=currency,
-        method_id=payment_method.method_id,
+        invoice_id=idempotency_key,
+        payment_id=payment.id,
+        amount=_format_amount(payment.amount),
+        currency=payment.currency,
     )
-
-    # TODO: Replace with actual Mollie API call
-    # mollie_client = MollieClient(api_key=settings.MOLLIE_API_KEY)
-    # payment = mollie_client.payments.create({
-    #     "amount": {"currency": currency, "value": str(total)},
-    #     "description": f"Invoice {invoice_id}",
-    #     "method": payment_method.type,
-    #     "metadata": {"invoice_id": invoice_id},
-    #     "idempotencyKey": invoice_id,
-    # })
 
     return PaymentResult(
         success=True,
-        payment_id=f"tr_stub_{invoice_id}",
-        error=None,
+        payment_id=payment.id,
+        checkout_url=None,
     )
 
 
-async def process_mollie_webhook(
-    payload: dict[str, str],
-    signature: str,
-) -> WebhookResult:
-    """Verify and process a Mollie webhook notification.
+# ---------------------------------------------------------------------------
+# Webhook processing
+# ---------------------------------------------------------------------------
 
-    In production this will:
-    1. Verify the webhook signature against the Mollie profile key.
-    2. Fetch the payment from Mollie to get the authoritative status.
-    3. Update the internal invoice / payment records.
+# Mollie status -> Invoice status mapping
+_MOLLIE_STATUS_TO_INVOICE: dict[str, InvoiceStatus] = {
+    "paid": InvoiceStatus.PAID,
+    "failed": InvoiceStatus.UNCOLLECTIBLE,
+    "expired": InvoiceStatus.UNCOLLECTIBLE,
+    "canceled": InvoiceStatus.UNCOLLECTIBLE,
+}
 
-    This is a **stub**.
+
+async def process_webhook(
+    mollie: MollieClient,
+    session: AsyncSession,
+    payment_id: str,
+) -> Invoice | None:
+    """Fetch a payment from Mollie and update the matching invoice.
+
+    Returns the updated :class:`Invoice`, or ``None`` if no invoice was
+    found for the given *payment_id*.
     """
-    payment_id = payload.get("id", "")
+    payment = await mollie.get_payment(payment_id)
 
     log.info(
-        "payment.webhook_received",
+        "payment.webhook_processing",
         payment_id=payment_id,
-        signature_present=bool(signature),
+        mollie_status=payment.status,
     )
 
-    # TODO: Replace with actual Mollie webhook verification
-    # 1. Verify signature
-    # 2. GET /v2/payments/{payment_id} to get current status
-    # 3. Map Mollie status -> internal status
-
-    return WebhookResult(
-        verified=True,
-        payment_id=payment_id,
-        new_status="paid",
-        error=None,
+    result = await session.execute(
+        select(Invoice).where(Invoice.mollie_payment_id == payment_id)
     )
+    invoice: Invoice | None = result.scalar_one_or_none()
+
+    if invoice is None:
+        log.warning(
+            "payment.webhook_invoice_not_found",
+            payment_id=payment_id,
+        )
+        return None
+
+    new_status = _MOLLIE_STATUS_TO_INVOICE.get(payment.status)
+    if new_status is None:
+        log.info(
+            "payment.webhook_no_status_change",
+            payment_id=payment_id,
+            mollie_status=payment.status,
+            invoice_id=str(invoice.id),
+        )
+        return invoice
+
+    invoice.status = new_status
+
+    if new_status == InvoiceStatus.PAID:
+        invoice.paid_at = datetime.now(timezone.utc)
+
+    log.info(
+        "payment.webhook_invoice_updated",
+        payment_id=payment_id,
+        invoice_id=str(invoice.id),
+        old_status=invoice.status,
+        new_status=new_status.value,
+    )
+
+    return invoice

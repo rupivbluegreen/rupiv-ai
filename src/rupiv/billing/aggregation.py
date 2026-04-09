@@ -1,4 +1,8 @@
-"""ClickHouse aggregation queries for billing periods."""
+"""ClickHouse aggregation queries for billing periods.
+
+Uses the async ``clickhouse-connect`` client and parameterised queries
+to aggregate usage counts and validated outcomes from ``rupiv.events``.
+"""
 
 from __future__ import annotations
 
@@ -7,36 +11,41 @@ from decimal import Decimal
 from typing import Any
 
 import structlog
+from clickhouse_connect.driver.asyncclient import AsyncClient
 
-log = structlog.get_logger(__name__)
+log: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
 
 async def aggregate_usage(
+    client: AsyncClient,
     customer_id: str,
     metric: str,
     period_start: datetime,
     period_end: datetime,
 ) -> Decimal:
-    """Query ClickHouse for the total usage count of *metric* within the
-    billing period ``[period_start, period_end)``.
+    """Count usage events for *metric* in ``[period_start, period_end)``.
+
+    Args:
+        client: An async ClickHouse client.
+        customer_id: UUID string of the customer.
+        metric: The metric name to aggregate.
+        period_start: Inclusive start of the billing window.
+        period_end: Exclusive end of the billing window.
 
     Returns:
-        Aggregate usage as a Decimal.
+        Aggregate count as a ``Decimal``.
     """
-    import clickhouse_connect  # type: ignore[import-untyped]
-
-    client = clickhouse_connect.get_client()
-
     query = """
-        SELECT coalesce(sum(value), 0) AS total
-        FROM billing_events
+        SELECT count(*) AS total
+        FROM rupiv.events
         WHERE customer_id = {customer_id:String}
           AND metric      = {metric:String}
-          AND timestamp   >= {period_start:DateTime64(3)}
-          AND timestamp   <  {period_end:DateTime64(3)}
+          AND event_type  = 'usage'
+          AND timestamp  >= {period_start:DateTime64(3)}
+          AND timestamp   < {period_end:DateTime64(3)}
     """
 
-    result = client.query(
+    result = await client.query(
         query,
         parameters={
             "customer_id": customer_id,
@@ -46,7 +55,8 @@ async def aggregate_usage(
         },
     )
 
-    total = Decimal(str(result.first_row[0])) if result.first_row else Decimal("0")
+    row = result.first_row if result.first_row else None
+    total = Decimal(str(row[0])) if row else Decimal("0")
 
     log.info(
         "aggregation.usage",
@@ -58,41 +68,41 @@ async def aggregate_usage(
 
 
 async def aggregate_outcomes(
+    client: AsyncClient,
     customer_id: str,
     metric: str,
     period_start: datetime,
     period_end: datetime,
     status: str = "validated",
 ) -> list[dict[str, Any]]:
-    """Query ClickHouse for validated outcomes of *metric* within the
-    billing period.
+    """Fetch validated outcome events for *metric* in the billing period.
+
+    Each returned dict contains ``event_id``, ``properties``, and
+    ``timestamp`` columns from ClickHouse.
+
+    Args:
+        client: An async ClickHouse client.
+        customer_id: UUID string of the customer.
+        metric: The metric name to filter.
+        period_start: Inclusive start of the billing window.
+        period_end: Exclusive end of the billing window.
+        status: Outcome status filter (default ``"validated"``).
 
     Returns:
-        List of outcome dicts, each containing at least
-        ``outcome_id``, ``status``, ``timestamp``, and any extra
-        properties stored in the ``properties`` column.
+        A list of dicts, one per matching outcome event.
     """
-    import clickhouse_connect  # type: ignore[import-untyped]
-
-    client = clickhouse_connect.get_client()
-
     query = """
-        SELECT
-            outcome_id,
-            customer_id,
-            metric,
-            status,
-            timestamp,
-            properties
-        FROM billing_outcomes
-        WHERE customer_id = {customer_id:String}
-          AND metric      = {metric:String}
-          AND status      = {status:String}
-          AND timestamp   >= {period_start:DateTime64(3)}
-          AND timestamp   <  {period_end:DateTime64(3)}
+        SELECT event_id, properties, timestamp
+        FROM rupiv.events
+        WHERE customer_id   = {customer_id:String}
+          AND metric        = {metric:String}
+          AND event_type    = 'outcome'
+          AND outcome_status = {status:String}
+          AND timestamp    >= {period_start:DateTime64(3)}
+          AND timestamp     < {period_end:DateTime64(3)}
     """
 
-    result = client.query(
+    result = await client.query(
         query,
         parameters={
             "customer_id": customer_id,

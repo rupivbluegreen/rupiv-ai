@@ -152,6 +152,7 @@ async def create_customer(
     )
     session.add(customer)
     await session.flush()
+    await session.refresh(customer)
 
     return CustomerResponse.model_validate(customer)
 
@@ -185,5 +186,6 @@ async def update_customer(
         setattr(customer, attr_name, value)
 
     await session.flush()
+    await session.refresh(customer)
 
     return CustomerResponse.model_validate(customer)

@@ -1,28 +1,22 @@
-"""Event ingestion and metering pipeline for Rupiv.ai."""
+"""Event ingestion and metering pipeline for Rupiv.ai.
+
+Events flow: POST /v1/events -> PostgreSQL -> Redis queue -> ClickHouse.
+"""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import json
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
 import structlog
 
-log = structlog.get_logger(__name__)
+from rupiv.config import get_settings
 
+log: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
-@dataclass(frozen=True)
-class Event:
-    """Immutable billing event."""
-
-    event_id: str
-    customer_id: str
-    metric: str
-    value: float
-    timestamp: datetime
-    properties: dict[str, Any] = field(default_factory=dict)
-    idempotency_key: str | None = None
+EVENTS_QUEUE_KEY = "rupiv:events:queue"
 
 
 async def ingest_event(
@@ -31,90 +25,130 @@ async def ingest_event(
     value: float,
     properties: dict[str, Any] | None = None,
     idempotency_key: str | None = None,
-) -> Event:
-    """Accept an incoming event and enqueue it to BullMQ for async processing.
+    *,
+    event_type: str = "usage",
+    subscription_id: str | None = None,
+) -> dict[str, Any]:
+    """Accept an incoming event and push it to a Redis list for async processing.
 
-    Idempotency: if *idempotency_key* is provided, duplicate submissions
-    within 24 h are silently dropped by the downstream worker.
+    The event has already been persisted to PostgreSQL by the API endpoint.
+    This function enqueues a lightweight JSON payload so the event_processor
+    worker can batch-write to ClickHouse.
+
+    If Redis is unavailable the event is still safe in PostgreSQL; we log a
+    warning and return normally.
+
+    Args:
+        customer_id: UUID of the customer.
+        metric: Metric identifier (e.g. ``"api_call"``, ``"ticket_resolved"``).
+        value: Numeric value for the event.
+        properties: Arbitrary key-value metadata.
+        idempotency_key: Caller-supplied dedup key.
+        event_type: ``"usage"`` or ``"outcome"``.
+        subscription_id: Optional subscription UUID.
+
+    Returns:
+        The event payload dict that was enqueued (or would have been).
     """
-    event = Event(
-        event_id=str(uuid4()),
-        customer_id=customer_id,
-        metric=metric,
-        value=value,
-        timestamp=datetime.now(timezone.utc),
-        properties=properties or {},
-        idempotency_key=idempotency_key,
-    )
+    event_id = str(uuid4())
+    now = datetime.now(timezone.utc)
 
-    log.info(
-        "event.ingested",
-        event_id=event.event_id,
-        customer_id=customer_id,
-        metric=metric,
-        idempotency_key=idempotency_key,
-    )
+    payload: dict[str, Any] = {
+        "event_id": event_id,
+        "customer_id": customer_id,
+        "subscription_id": subscription_id,
+        "event_type": event_type,
+        "metric": metric,
+        "value": value,
+        "timestamp": now.isoformat(),
+        "properties": properties or {},
+        "idempotency_key": idempotency_key or event_id,
+    }
 
-    # Enqueue to BullMQ via Redis (bullmq Python bindings)
-    # The queue name matches the worker consumer in workers/event_processor.py
-    from bullmq import Queue  # type: ignore[import-untyped]
+    try:
+        import redis.asyncio as aioredis
 
-    queue = Queue("billing-events")
-    await queue.add(
-        "process_event",
-        {
-            "event_id": event.event_id,
-            "customer_id": event.customer_id,
-            "metric": event.metric,
-            "value": event.value,
-            "timestamp": event.timestamp.isoformat(),
-            "properties": event.properties,
-            "idempotency_key": event.idempotency_key,
-        },
-        opts={"jobId": event.idempotency_key or event.event_id},
-    )
+        settings = get_settings()
+        redis_client: aioredis.Redis = aioredis.from_url(  # type: ignore[assignment]
+            settings.REDIS_URL,
+            decode_responses=True,
+        )
+        try:
+            await redis_client.rpush(EVENTS_QUEUE_KEY, json.dumps(payload))
+            log.info(
+                "event.enqueued",
+                event_id=event_id,
+                customer_id=customer_id,
+                metric=metric,
+            )
+        finally:
+            await redis_client.aclose()
+    except Exception:
+        log.warning(
+            "event.enqueue_failed",
+            event_id=event_id,
+            customer_id=customer_id,
+            metric=metric,
+            exc_info=True,
+        )
 
-    log.info("event.enqueued", event_id=event.event_id)
-    return event
+    return payload
 
 
-async def write_to_clickhouse(events: list[Event]) -> int:
-    """Write a batch of events to ClickHouse.
+async def write_to_clickhouse(events: list[dict[str, Any]]) -> int:
+    """Batch-insert event dicts into the ClickHouse ``events`` table.
 
-    Returns the number of rows inserted.
+    Uses the async ClickHouse client from ``rupiv.clickhouse``.
+
+    Args:
+        events: List of event dicts with keys matching the ClickHouse schema.
+
+    Returns:
+        The number of rows inserted.
     """
     if not events:
         return 0
 
-    import clickhouse_connect  # type: ignore[import-untyped]
+    from rupiv.clickhouse import get_clickhouse_client
 
-    client = clickhouse_connect.get_client()
+    client = await get_clickhouse_client()
+    try:
+        rows: list[list[Any]] = []
+        for e in events:
+            rows.append([
+                e["event_id"],
+                e["customer_id"],
+                e.get("subscription_id") or None,
+                e.get("event_type", "usage"),
+                e["metric"],
+                json.dumps(e.get("properties", {})),
+                e.get("outcome_status", "pending"),
+                e.get("idempotency_key", ""),
+                e["timestamp"],
+            ])
 
-    rows = [
-        (
-            e.event_id,
-            e.customer_id,
-            e.metric,
-            e.value,
-            e.timestamp,
-            e.idempotency_key or "",
+        columns = [
+            "event_id",
+            "customer_id",
+            "subscription_id",
+            "event_type",
+            "metric",
+            "properties",
+            "outcome_status",
+            "idempotency_key",
+            "timestamp",
+        ]
+
+        await client.insert(
+            "events",
+            rows,
+            column_names=columns,
         )
-        for e in events
-    ]
-    columns = [
-        "event_id",
-        "customer_id",
-        "metric",
-        "value",
-        "timestamp",
-        "idempotency_key",
-    ]
 
-    client.insert(
-        "billing_events",
-        rows,
-        column_names=columns,
-    )
-
-    log.info("clickhouse.batch_written", count=len(rows))
-    return len(rows)
+        log.info("clickhouse.batch_written", count=len(rows))
+        return len(rows)
+    except Exception:
+        log.error("clickhouse.batch_write_failed", count=len(events), exc_info=True)
+        raise
+    finally:
+        await client.close()

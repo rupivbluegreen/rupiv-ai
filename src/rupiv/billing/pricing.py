@@ -1,6 +1,11 @@
 """Pricing engine for Rupiv.ai outcome-based billing.
 
 ALL money arithmetic uses ``decimal.Decimal`` — never ``float``.
+
+This module works with both the local ``PricingRule`` dataclass (for
+standalone testing) and the SQLAlchemy ORM ``PricingRule`` model from
+``rupiv.models.plan``.  The engine accesses attributes by name, so any
+object that exposes the expected fields will work.
 """
 
 from __future__ import annotations
@@ -8,11 +13,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal, ROUND_HALF_UP
 from enum import Enum
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 import structlog
 
-log = structlog.get_logger(__name__)
+log: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Domain types
@@ -24,6 +29,34 @@ class PricingModel(str, Enum):
     USAGE = "usage"
     OUTCOME = "outcome"
     TIERED = "tiered"
+
+
+@runtime_checkable
+class PricingRuleLike(Protocol):
+    """Structural interface satisfied by both the local dataclass and the
+    SQLAlchemy ORM ``PricingRule`` model."""
+
+    @property
+    def pricing_model(self) -> str: ...  # "flat" | "usage" | "outcome" | "tiered"
+
+    @property
+    def metric(self) -> str | None: ...
+
+    # Flat
+    @property
+    def flat_amount(self) -> Decimal | None: ...
+
+    # Usage / outcome
+    @property
+    def unit_amount(self) -> Decimal | None: ...
+
+    # Outcome specifics (stored in outcome_rules JSONB on the ORM model)
+    @property
+    def outcome_rules(self) -> dict[str, Any] | None: ...
+
+    # Tiered specifics (stored in tiers JSONB on the ORM model)
+    @property
+    def tiers(self) -> list[dict[str, Any]] | None: ...
 
 
 @dataclass(frozen=True)
@@ -39,42 +72,11 @@ class LineItem:
 
 
 @dataclass(frozen=True)
-class PricingRule:
-    """A pricing rule attached to a subscription plan.
-
-    Fields vary by *model*:
-    - flat:    amount
-    - usage:   unit_amount, metric
-    - outcome: price_per_outcome, billable_when, cap_per_period, metric
-    - tiered:  tiers (list[TierBracket]), metric
-    """
-
-    model: PricingModel
-    description: str
-    metric: str | None = None
-    amount: Decimal | None = None
-    unit_amount: Decimal | None = None
-    price_per_outcome: Decimal | None = None
-    billable_when: dict[str, Any] | None = None
-    cap_per_period: Decimal | None = None
-    tiers: list[TierBracket] | None = None
-
-
-@dataclass(frozen=True)
 class TierBracket:
     """A single tier in tiered pricing."""
 
     up_to: Decimal | None  # None = unlimited (last tier)
     unit_amount: Decimal
-
-
-@dataclass
-class Subscription:
-    """Minimal subscription representation for the pricing engine."""
-
-    subscription_id: str
-    customer_id: str
-    pricing_rules: list[PricingRule]
 
 
 # ---------------------------------------------------------------------------
@@ -86,6 +88,45 @@ _TWO_PLACES = Decimal("0.01")
 
 def _round_money(value: Decimal) -> Decimal:
     return value.quantize(_TWO_PLACES, rounding=ROUND_HALF_UP)
+
+
+def _to_decimal(value: Any) -> Decimal:
+    """Safely coerce a value to ``Decimal``."""
+    if isinstance(value, Decimal):
+        return value
+    return Decimal(str(value)) if value is not None else Decimal("0")
+
+
+def _parse_tiers(raw: Any) -> list[TierBracket]:
+    """Parse a JSONB tiers column into ``TierBracket`` objects.
+
+    Accepts either a list of dicts (ORM JSONB) or a list of
+    ``TierBracket`` instances.
+    """
+    if not raw:
+        return []
+    brackets: list[TierBracket] = []
+    for item in raw:
+        if isinstance(item, TierBracket):
+            brackets.append(item)
+        elif isinstance(item, dict):
+            up_to_raw = item.get("up_to")
+            up_to = Decimal(str(up_to_raw)) if up_to_raw is not None else None
+            unit_amt = Decimal(str(item["unit_amount"]))
+            brackets.append(TierBracket(up_to=up_to, unit_amount=unit_amt))
+        else:
+            raise TypeError(f"Unexpected tier type: {type(item)}")
+    return brackets
+
+
+def _rule_description(rule: Any) -> str:
+    """Extract a human-readable description from a pricing rule."""
+    # ORM PricingRule has no 'description' column — derive one.
+    model_label = getattr(rule, "pricing_model", "unknown")
+    if isinstance(model_label, Enum):
+        model_label = model_label.value
+    metric = getattr(rule, "metric", None) or ""
+    return f"{model_label} — {metric}".strip(" —") if metric else str(model_label)
 
 
 # ---------------------------------------------------------------------------
@@ -102,45 +143,34 @@ class PricingEngine:
     # -- Flat ---------------------------------------------------------------
 
     @staticmethod
-    def calculate_flat(rule: PricingRule, period: str) -> Decimal:
-        """Return the fixed amount for *period* (ignored for now; reserved
-        for future pro-ration logic).
+    def calculate_flat(rule: Any, period: str) -> Decimal:
+        """Return the fixed amount for *period*.
 
-        Args:
-            rule: A PricingRule with model=FLAT and ``amount`` set.
-            period: ISO-8601 period label, e.g. ``"2026-04"``.
-
-        Returns:
-            The flat fee as a Decimal rounded to 2 d.p.
+        Reads ``flat_amount`` (ORM) or ``amount`` (dataclass).
         """
-        if rule.amount is None:
-            raise ValueError("Flat rule must have an amount")
+        amount = getattr(rule, "flat_amount", None) or getattr(rule, "amount", None)
+        if amount is None:
+            raise ValueError("Flat rule must have a flat_amount or amount")
 
-        log.debug("pricing.flat", description=rule.description, period=period)
-        return _round_money(rule.amount)
+        amount = _to_decimal(amount)
+        log.debug("pricing.flat", description=_rule_description(rule), period=period)
+        return _round_money(amount)
 
     # -- Usage --------------------------------------------------------------
 
     @staticmethod
-    def calculate_usage(rule: PricingRule, quantity: Decimal) -> Decimal:
-        """unit_amount * quantity.
-
-        Args:
-            rule: A PricingRule with model=USAGE and ``unit_amount`` set.
-            quantity: Metered usage quantity for the period.
-
-        Returns:
-            Total usage charge rounded to 2 d.p.
-        """
-        if rule.unit_amount is None:
+    def calculate_usage(rule: Any, quantity: Decimal) -> Decimal:
+        """unit_amount * quantity."""
+        unit_amount = _to_decimal(getattr(rule, "unit_amount", None))
+        if unit_amount == Decimal("0"):
             raise ValueError("Usage rule must have a unit_amount")
 
-        total = rule.unit_amount * quantity
+        total = unit_amount * quantity
         log.debug(
             "pricing.usage",
-            description=rule.description,
+            description=_rule_description(rule),
             quantity=str(quantity),
-            unit_amount=str(rule.unit_amount),
+            unit_amount=str(unit_amount),
             total=str(total),
         )
         return _round_money(total)
@@ -149,42 +179,51 @@ class PricingEngine:
 
     @staticmethod
     def calculate_outcome(
-        rule: PricingRule,
+        rule: Any,
         outcomes: list[dict[str, Any]],
     ) -> Decimal:
         """Filter outcomes by ``billable_when`` rules, price valid ones,
         and respect ``cap_per_period``.
 
-        ``billable_when`` is a dict of ``{field: expected_value}`` — an
-        outcome is billable only when **all** conditions match.
-
-        Args:
-            rule: A PricingRule with model=OUTCOME.
-            outcomes: Raw outcome dicts from the aggregation layer.
-
-        Returns:
-            Total outcome charge rounded to 2 d.p.
+        The ORM model stores outcome config in the ``outcome_rules`` JSONB
+        column with keys ``billable_when``, ``cap_per_period``.  The
+        per-outcome price lives in ``unit_amount``.
         """
-        if rule.price_per_outcome is None:
-            raise ValueError("Outcome rule must have a price_per_outcome")
+        # Extract outcome config from ORM JSONB or dataclass attrs.
+        outcome_cfg: dict[str, Any] = getattr(rule, "outcome_rules", None) or {}
+        billable_when: dict[str, Any] = outcome_cfg.get("billable_when", {})
+        cap_raw = outcome_cfg.get("cap_per_period")
+        cap_per_period: Decimal | None = Decimal(str(cap_raw)) if cap_raw is not None else None
+        price_per_outcome = _to_decimal(
+            outcome_cfg.get("price_per_outcome") or getattr(rule, "unit_amount", None)
+        )
 
-        billable_when = rule.billable_when or {}
+        if price_per_outcome == Decimal("0"):
+            raise ValueError("Outcome rule must have a price_per_outcome or unit_amount")
 
         billable: list[dict[str, Any]] = []
         for outcome in outcomes:
-            if all(outcome.get(k) == v for k, v in billable_when.items()):
+            props = outcome.get("properties", outcome)
+            if isinstance(props, str):
+                import json
+
+                try:
+                    props = json.loads(props)
+                except (json.JSONDecodeError, TypeError):
+                    props = {}
+            if all(props.get(k) == v for k, v in billable_when.items()):
                 billable.append(outcome)
 
         billable_count = Decimal(len(billable))
 
-        if rule.cap_per_period is not None and billable_count > rule.cap_per_period:
-            billable_count = rule.cap_per_period
+        if cap_per_period is not None and billable_count > cap_per_period:
+            billable_count = cap_per_period
 
-        total = rule.price_per_outcome * billable_count
+        total = price_per_outcome * billable_count
 
         log.debug(
             "pricing.outcome",
-            description=rule.description,
+            description=_rule_description(rule),
             raw_count=len(outcomes),
             billable_count=str(billable_count),
             total=str(total),
@@ -194,28 +233,17 @@ class PricingEngine:
     # -- Tiered -------------------------------------------------------------
 
     @staticmethod
-    def calculate_tiered(rule: PricingRule, quantity: Decimal) -> Decimal:
-        """Apply graduated tiered pricing brackets.
-
-        Each bracket covers ``(previous_up_to, bracket.up_to]``.  The last
-        bracket (``up_to=None``) covers everything above the penultimate
-        bracket.
-
-        Args:
-            rule: A PricingRule with model=TIERED and ``tiers`` set.
-            quantity: Aggregate usage quantity for the period.
-
-        Returns:
-            Total tiered charge rounded to 2 d.p.
-        """
-        if not rule.tiers:
+    def calculate_tiered(rule: Any, quantity: Decimal) -> Decimal:
+        """Apply graduated tiered pricing brackets."""
+        brackets = _parse_tiers(getattr(rule, "tiers", None))
+        if not brackets:
             raise ValueError("Tiered rule must have at least one tier")
 
         total = Decimal("0")
         remaining = quantity
         prev_limit = Decimal("0")
 
-        for tier in rule.tiers:
+        for tier in brackets:
             if remaining <= 0:
                 break
 
@@ -232,7 +260,7 @@ class PricingEngine:
 
         log.debug(
             "pricing.tiered",
-            description=rule.description,
+            description=_rule_description(rule),
             quantity=str(quantity),
             total=str(total),
         )
@@ -242,85 +270,98 @@ class PricingEngine:
 
     def calculate_line_items(
         self,
-        subscription: Subscription,
-        events: dict[str, Any],
+        pricing_rules: list[Any],
+        aggregated: dict[str, dict[str, Any]],
+        period: str,
     ) -> list[LineItem]:
-        """Calculate all line items for a subscription in a billing period.
+        """Calculate all line items for a set of pricing rules.
 
-        ``events`` is a dict keyed by metric name containing:
-        - ``"quantity"``  — ``Decimal`` aggregate (for usage / tiered)
-        - ``"outcomes"``  — ``list[dict]`` (for outcome rules)
-        - ``"period"``    — ISO-8601 period label (for flat rules)
+        Args:
+            pricing_rules: ORM ``PricingRule`` objects (or dataclass equivalents)
+                with eagerly loaded plan data.
+            aggregated: Dict keyed by metric name.  Each value is a dict that
+                may contain ``"quantity"`` (``Decimal``) and/or ``"outcomes"``
+                (``list[dict]``).
+            period: ISO-8601 period label, e.g. ``"2026-04"``.
 
         Returns:
             Ordered list of ``LineItem`` instances.
         """
         line_items: list[LineItem] = []
-        period: str = events.get("period", "")
 
-        for rule in subscription.pricing_rules:
-            if rule.model == PricingModel.FLAT:
+        for rule in pricing_rules:
+            model_val = getattr(rule, "pricing_model", None)
+            if isinstance(model_val, Enum):
+                model_val = model_val.value
+            model = PricingModel(model_val)
+
+            metric = getattr(rule, "metric", None) or ""
+            metric_data: dict[str, Any] = aggregated.get(metric, {})
+            desc = _rule_description(rule)
+
+            if model == PricingModel.FLAT:
                 amount = self.calculate_flat(rule, period)
                 line_items.append(
                     LineItem(
-                        description=rule.description,
+                        description=desc,
                         quantity=Decimal("1"),
                         unit_amount=amount,
                         amount=amount,
-                        metric=rule.metric,
+                        metric=metric or None,
                         pricing_model=PricingModel.FLAT,
                     )
                 )
 
-            elif rule.model == PricingModel.USAGE:
-                metric_data = events.get(rule.metric or "", {})
-                qty = Decimal(str(metric_data.get("quantity", 0)))
+            elif model == PricingModel.USAGE:
+                qty = _to_decimal(metric_data.get("quantity", 0))
                 amount = self.calculate_usage(rule, qty)
                 line_items.append(
                     LineItem(
-                        description=rule.description,
+                        description=desc,
                         quantity=qty,
-                        unit_amount=rule.unit_amount or Decimal("0"),
+                        unit_amount=_to_decimal(getattr(rule, "unit_amount", 0)),
                         amount=amount,
-                        metric=rule.metric,
+                        metric=metric or None,
                         pricing_model=PricingModel.USAGE,
                     )
                 )
 
-            elif rule.model == PricingModel.OUTCOME:
-                metric_data = events.get(rule.metric or "", {})
+            elif model == PricingModel.OUTCOME:
                 outcomes_list: list[dict[str, Any]] = metric_data.get("outcomes", [])
                 amount = self.calculate_outcome(rule, outcomes_list)
-                billable_qty = amount / (rule.price_per_outcome or Decimal("1"))
+                outcome_cfg = getattr(rule, "outcome_rules", None) or {}
+                ppo = _to_decimal(
+                    outcome_cfg.get("price_per_outcome")
+                    or getattr(rule, "unit_amount", None)
+                )
+                billable_qty = amount / ppo if ppo else Decimal("0")
                 line_items.append(
                     LineItem(
-                        description=rule.description,
+                        description=desc,
                         quantity=_round_money(billable_qty),
-                        unit_amount=rule.price_per_outcome or Decimal("0"),
+                        unit_amount=ppo,
                         amount=amount,
-                        metric=rule.metric,
+                        metric=metric or None,
                         pricing_model=PricingModel.OUTCOME,
                     )
                 )
 
-            elif rule.model == PricingModel.TIERED:
-                metric_data = events.get(rule.metric or "", {})
-                qty = Decimal(str(metric_data.get("quantity", 0)))
+            elif model == PricingModel.TIERED:
+                qty = _to_decimal(metric_data.get("quantity", 0))
                 amount = self.calculate_tiered(rule, qty)
                 line_items.append(
                     LineItem(
-                        description=rule.description,
+                        description=desc,
                         quantity=qty,
                         unit_amount=Decimal("0"),  # varies per tier
                         amount=amount,
-                        metric=rule.metric,
+                        metric=metric or None,
                         pricing_model=PricingModel.TIERED,
                     )
                 )
 
         log.info(
             "pricing.line_items_calculated",
-            subscription_id=subscription.subscription_id,
             line_item_count=len(line_items),
         )
         return line_items

@@ -104,6 +104,7 @@ async def create_event(
         value=payload.properties.get("value", 1.0),
         properties=payload.properties,
         idempotency_key=payload.idempotency_key,
+        event_type=payload.type.value,
     )
 
     return EventResponse(event_id=event.id, status="accepted")

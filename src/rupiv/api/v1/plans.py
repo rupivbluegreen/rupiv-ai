@@ -119,7 +119,7 @@ def _pricing_rule_to_response(rule: PricingRule) -> PricingRuleResponse:
     """Map an ORM PricingRule to its API response schema."""
     return PricingRuleResponse(
         id=rule.id,
-        model=PricingModelEnum(rule.pricing_model.value),
+        model=PricingModelEnum(rule.pricing_model.value if hasattr(rule.pricing_model, "value") else str(rule.pricing_model)),
         metric=rule.metric,
         unit_price=rule.unit_amount if rule.unit_amount is not None else Decimal("0"),
         flat_amount=rule.flat_amount if rule.flat_amount is not None else Decimal("0"),
@@ -135,7 +135,8 @@ def _plan_to_response(plan: Plan, billing_period: str = "monthly") -> PlanRespon
     derived_period = billing_period
     for rule in plan.pricing_rules:
         if rule.billing_interval is not None:
-            derived_period = rule.billing_interval.value
+            bi = rule.billing_interval
+            derived_period = bi.value if hasattr(bi, "value") else str(bi)
             break
 
     return PlanResponse(

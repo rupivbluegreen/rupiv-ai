@@ -51,31 +51,54 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.db_engine = engine
     log.info("database_connected", url=settings.DATABASE_URL.split("@")[-1])
 
-    # Redis connection
-    from redis.asyncio import Redis
+    # Redis connection (optional in development — app continues without it)
+    redis_client = None
+    try:
+        from redis.asyncio import Redis
 
-    redis_client = Redis.from_url(settings.REDIS_URL, decode_responses=True)
+        redis_client = Redis.from_url(settings.REDIS_URL, decode_responses=True)
+        await redis_client.ping()
+        log.info("redis_connected", url=settings.REDIS_URL)
+    except Exception:
+        log.warning(
+            "redis_unavailable",
+            url=settings.REDIS_URL,
+            hint="App will continue without Redis. Caching and queues disabled.",
+        )
+        redis_client = None
     app.state.redis = redis_client
-    log.info("redis_connected", url=settings.REDIS_URL)
 
-    # ClickHouse client
-    import clickhouse_connect
+    # ClickHouse client (optional — app continues without it)
+    ch_client = None
+    try:
+        import clickhouse_connect
 
-    ch_client = clickhouse_connect.get_client(
-        host=settings.CLICKHOUSE_URL.replace("http://", "").split(":")[0],
-        port=int(settings.CLICKHOUSE_URL.split(":")[-1]),
-        database=settings.CLICKHOUSE_DATABASE,
-    )
+        ch_client = clickhouse_connect.get_client(
+            host=settings.CLICKHOUSE_URL.replace("http://", "").split(":")[0],
+            port=int(settings.CLICKHOUSE_URL.split(":")[-1]),
+            database=settings.CLICKHOUSE_DATABASE,
+        )
+        # Verify connectivity
+        ch_client.query("SELECT 1")
+        log.info("clickhouse_connected", database=settings.CLICKHOUSE_DATABASE)
+    except Exception:
+        log.warning(
+            "clickhouse_unavailable",
+            url=settings.CLICKHOUSE_URL,
+            hint="App will continue without ClickHouse. Analytics disabled.",
+        )
+        ch_client = None
     app.state.clickhouse = ch_client
-    log.info("clickhouse_connected", database=settings.CLICKHOUSE_DATABASE)
 
     yield
 
     # --- Shutdown ---
     log.info("shutting_down_app")
     await engine.dispose()
-    await redis_client.aclose()
-    ch_client.close()
+    if redis_client is not None:
+        await redis_client.aclose()
+    if ch_client is not None:
+        ch_client.close()
     log.info("shutdown_complete")
 
 
