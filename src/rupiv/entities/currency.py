@@ -76,6 +76,48 @@ def round_currency(amount: Decimal, currency: str) -> Decimal:
 # ---------------------------------------------------------------------------
 
 
+def _parse_ecb_csv(csv_text: str) -> dict[str, Decimal]:
+    """Parse ECB SDMX CSV format into a currency→rate dict.
+
+    The ECB CSV has columns including ``CURRENCY`` and ``OBS_VALUE``.
+    Each row is one currency pair (EUR → X).
+    """
+    rates: dict[str, Decimal] = {}
+    lines = csv_text.strip().split("\n")
+    if len(lines) < 2:  # noqa: PLR2004
+        return rates
+
+    header = lines[0].split(",")
+
+    # Find column indices
+    currency_idx: int | None = None
+    value_idx: int | None = None
+    for i, col in enumerate(header):
+        col_clean = col.strip().strip('"')
+        if col_clean == "CURRENCY":
+            currency_idx = i
+        elif col_clean == "OBS_VALUE":
+            value_idx = i
+
+    if currency_idx is None or value_idx is None:
+        logger.warning("ecb_csv_parse_failed", header=header)
+        return rates
+
+    for line in lines[1:]:
+        cols = line.split(",")
+        if len(cols) <= max(currency_idx, value_idx):
+            continue
+        currency = cols[currency_idx].strip().strip('"')
+        value_str = cols[value_idx].strip().strip('"')
+        if currency and value_str:
+            try:
+                rates[currency] = Decimal(value_str)
+            except Exception:
+                continue
+
+    return rates
+
+
 class ECBRateProvider:
     """Currency conversion using ECB reference rates.
 
@@ -108,24 +150,42 @@ class ECBRateProvider:
         self,
         ref_date: date | None = None,
     ) -> dict[str, Decimal]:
-        """Fetch exchange rates from the ECB.
+        """Fetch exchange rates from the ECB Data API.
 
-        For the MVP, returns the hardcoded rate table.  *ref_date* is
-        accepted for API compatibility but currently ignored.
+        Falls back to hardcoded ``_MVP_RATES`` if the ECB API is unreachable.
         """
-        # In production, this would be an async HTTP call:
-        #   async with httpx.AsyncClient() as client:
-        #       resp = await client.get(ECB_RATE_URL, params={...})
-        #       rates = _parse_ecb_response(resp)
-        rates = dict(_MVP_RATES)
-        self._populate_cache(rates)
+        import httpx
 
-        logger.debug(
-            "ecb_rates_fetched",
-            currency_count=len(rates),
-            ref_date=str(ref_date) if ref_date else "latest",
-        )
-        return rates
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(
+                    ECB_RATE_URL,
+                    params={"lastNObservations": "1", "format": "csvdata"},
+                )
+                resp.raise_for_status()
+                rates = _parse_ecb_csv(resp.text)
+                rates["EUR"] = Decimal("1.0000")  # base currency
+                self._populate_cache(rates)
+
+                logger.info(
+                    "ecb_rates_fetched_live",
+                    currency_count=len(rates),
+                    ref_date=str(ref_date) if ref_date else "latest",
+                )
+                return rates
+
+        except Exception:
+            logger.warning(
+                "ecb_rates_fetch_failed_using_fallback",
+                ref_date=str(ref_date) if ref_date else "latest",
+                exc_info=True,
+            )
+            # Use cached rates if available, otherwise hardcoded fallback
+            if self._cache:
+                return dict(self._cache)
+            rates = dict(_MVP_RATES)
+            self._populate_cache(rates)
+            return rates
 
     async def _ensure_rates(self) -> dict[str, Decimal]:
         """Return cached rates, fetching if stale or empty."""

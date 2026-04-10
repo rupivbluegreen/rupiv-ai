@@ -9,6 +9,7 @@ from enum import Enum
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import Response as FastAPIResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -168,3 +169,36 @@ async def get_invoice(
         )
 
     return InvoiceResponse.model_validate(invoice)
+
+
+@router.get("/{invoice_id}/pdf", summary="Download invoice PDF")
+async def get_invoice_pdf(
+    invoice_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+) -> FastAPIResponse:
+    """Generate and return a PDF for the invoice."""
+    from rupiv.invoicing.pdf import generate_invoice_pdf
+
+    stmt = (
+        select(Invoice)
+        .where(Invoice.id == invoice_id)
+        .options(selectinload(Invoice.line_items), selectinload(Invoice.customer))
+    )
+    result = await db.execute(stmt)
+    invoice: Invoice | None = result.scalar_one_or_none()
+
+    if invoice is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Invoice {invoice_id} not found",
+        )
+
+    pdf_bytes = generate_invoice_pdf(invoice)
+
+    return FastAPIResponse(
+        content=bytes(pdf_bytes),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="invoice-{invoice.invoice_number}.pdf"',
+        },
+    )

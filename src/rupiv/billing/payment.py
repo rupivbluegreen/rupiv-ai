@@ -60,6 +60,15 @@ class MollieRefund:
 
 
 @dataclass(frozen=True)
+class PaymentMethod:
+    """A resolved payment method for charge routing."""
+
+    method_id: str
+    provider: str  # mollie | stripe | adyen
+    type: str  # card | ideal | sepa_direct_debit
+
+
+@dataclass(frozen=True)
 class PaymentResult:
     """Outcome of a charge attempt."""
 
@@ -467,3 +476,47 @@ async def process_stripe_webhook(
     )
 
     return invoice
+
+
+# ---------------------------------------------------------------------------
+# Routed invoice charging (dispatches to correct PSP)
+# ---------------------------------------------------------------------------
+
+
+async def charge_invoice_routed(
+    invoice: Invoice,
+    payment_method: PaymentMethod,
+    settings: Any,
+    webhook_base_url: str = "https://api.rupiv.ai",
+) -> PaymentResult:
+    """Route an invoice charge to the correct PSP based on the payment method.
+
+    This is the primary entry point for the payment worker.
+    """
+    provider = payment_method.provider
+
+    if provider == "mollie":
+        api_key = settings.MOLLIE_API_KEY
+        if not api_key:
+            return PaymentResult(success=False, payment_id="", error="MOLLIE_API_KEY not configured")
+        client = MollieClient(api_key)
+        try:
+            return await charge_invoice(client, invoice, webhook_base_url)
+        finally:
+            await client.close()
+
+    if provider == "stripe":
+        api_key = settings.STRIPE_API_KEY
+        if not api_key:
+            return PaymentResult(success=False, payment_id="", error="STRIPE_API_KEY not configured")
+        stripe_client = StripeClient(api_key)
+        try:
+            return await charge_invoice_stripe(stripe_client, invoice, webhook_base_url)
+        finally:
+            await stripe_client.close()
+
+    return PaymentResult(
+        success=False,
+        payment_id="",
+        error=f"Unsupported payment provider: {provider}",
+    )

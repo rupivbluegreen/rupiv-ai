@@ -54,8 +54,26 @@ async def _process_job(job_data: dict[str, Any]) -> None:
         )
         return
 
-    # TODO: Update the customer record in the database with the
-    # validation result. For now, just log it.
+    # Persist validation result to the customer record
+    from datetime import UTC, datetime
+
+    from sqlalchemy import update
+
+    from rupiv.db import _get_session_factory
+    from rupiv.models.customer import Customer
+
+    session_factory = _get_session_factory()
+    async with session_factory() as session:
+        await session.execute(
+            update(Customer)
+            .where(Customer.id == customer_id)
+            .values(
+                vat_valid=result.valid,
+                vat_validated_at=datetime.now(UTC),
+            ),
+        )
+        await session.commit()
+
     log.info(
         "vat_worker.validated",
         customer_id=customer_id,

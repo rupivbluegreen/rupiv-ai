@@ -6,7 +6,9 @@ from decimal import Decimal
 
 import pytest
 
-from rupiv.entities.currency import ECBRateProvider, round_currency
+from unittest.mock import AsyncMock, patch
+
+from rupiv.entities.currency import ECBRateProvider, _MVP_RATES, round_currency
 
 
 class TestRoundCurrency:
@@ -34,8 +36,11 @@ class TestECBRateProvider:
 
     @pytest.fixture
     def provider(self) -> ECBRateProvider:
-        """Return a fresh ECBRateProvider instance."""
-        return ECBRateProvider()
+        """Return a provider that uses hardcoded MVP rates for deterministic tests."""
+        p = ECBRateProvider()
+        p._cache = dict(_MVP_RATES)
+        p._cache_timestamp = __import__("time").monotonic()
+        return p
 
     async def test_convert_eur_to_usd(self, provider: ECBRateProvider) -> None:
         """Converting EUR to USD should use the MVP rate (1.0850)."""

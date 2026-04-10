@@ -11,6 +11,9 @@ import {
   BookOpen,
   Shield,
   BarChart3,
+  Bell,
+  FileOutput,
+  Shuffle,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -26,6 +29,9 @@ const navItems = [
   { to: '/revenue', label: 'Revenue', icon: BookOpen },
   { to: '/policies', label: 'Policies', icon: Shield },
   { to: '/payment-analytics', label: 'Payment Analytics', icon: BarChart3 },
+  { to: '/alerts', label: 'Alerts', icon: Bell },
+  { to: '/erp-export', label: 'ERP Export', icon: FileOutput },
+  { to: '/transformations', label: 'Transformations', icon: Shuffle },
 ];
 
 export default function Sidebar() {

@@ -1,36 +1,52 @@
-"""Double-entry ledger for Agent-to-Agent (A2A) fund transfers."""
+"""Double-entry ledger for Agent-to-Agent (A2A) fund transfers.
+
+Backed by PostgreSQL via the ``ledger_entries`` table. Each function
+manages its own database session so callers (including LangGraph agent
+nodes) don't need to pass one in.
+"""
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from decimal import Decimal
-from enum import Enum
-from uuid import uuid4
-
 import structlog
+from sqlalchemy import func, select, update
+
+from rupiv.db import _get_session_factory
+from rupiv.models.ledger import EntryType, LedgerEntry, LedgerStatus
 
 log = structlog.get_logger(__name__)
 
+
+def _to_uuid(value: str | uuid.UUID) -> uuid.UUID:
+    """Coerce a string to UUID if needed.
+
+    If the string is not a valid UUID, generate a deterministic UUID5
+    from it so that the same string always maps to the same account.
+    """
+    if isinstance(value, uuid.UUID):
+        return value
+    try:
+        return uuid.UUID(value)
+    except ValueError:
+        return uuid.uuid5(uuid.NAMESPACE_URL, value)
+
+
+# Re-export for backward compatibility with callers that do
+# ``from rupiv.billing.ledger import EntryStatus, LedgerEntry``
+EntryStatus = LedgerStatus  # alias
+
+
 # ---------------------------------------------------------------------------
-# Domain types
+# DTO for public API (callers don't deal with ORM objects)
 # ---------------------------------------------------------------------------
-
-
-class EntryType(str, Enum):
-    DEBIT = "debit"
-    CREDIT = "credit"
-
-
-class EntryStatus(str, Enum):
-    PENDING = "pending"
-    SETTLED = "settled"
-    FAILED = "failed"
 
 
 @dataclass
-class LedgerEntry:
-    """A single debit or credit entry."""
+class LedgerEntryDTO:
+    """Serialisable snapshot of a ledger entry."""
 
     entry_id: str
     transaction_id: str
@@ -39,15 +55,24 @@ class LedgerEntry:
     amount: Decimal
     currency: str
     description: str
-    status: EntryStatus
+    status: LedgerStatus
     created_at: datetime
 
 
-# ---------------------------------------------------------------------------
-# In-memory store (replace with PostgreSQL in production)
-# ---------------------------------------------------------------------------
+def _to_dto(entry: LedgerEntry) -> LedgerEntryDTO:
+    """Convert an ORM ``LedgerEntry`` to a DTO."""
+    return LedgerEntryDTO(
+        entry_id=str(entry.id),
+        transaction_id=str(entry.transaction_id),
+        account_id=str(entry.account_id),
+        entry_type=entry.entry_type,
+        amount=Decimal(str(entry.amount)),
+        currency=entry.currency,
+        description=entry.description or "",
+        status=entry.status,
+        created_at=entry.created_at,
+    )
 
-_entries: list[LedgerEntry] = []
 
 # ---------------------------------------------------------------------------
 # Public API
@@ -63,62 +88,48 @@ async def create_transfer(
 ) -> str:
     """Create a matched debit + credit pair.
 
-    Every transfer produces exactly **two** ledger entries so that the
-    books always balance.
-
-    Args:
-        from_account: Account to debit.
-        to_account: Account to credit.
-        amount: Transfer amount (must be > 0).
-        currency: ISO-4217 currency code.
-        description: Human-readable memo.
-
-    Returns:
-        The ``transaction_id`` shared by both entries.
-
-    Raises:
-        ValueError: If *amount* is not positive.
+    Returns the ``transaction_id`` shared by both entries.
     """
     if amount <= 0:
-        raise ValueError("Transfer amount must be positive")
+        msg = "Transfer amount must be positive"
+        raise ValueError(msg)
 
-    transaction_id = str(uuid4())
-    now = datetime.now(UTC)
+    transaction_id = uuid.uuid4()
 
     debit = LedgerEntry(
-        entry_id=str(uuid4()),
         transaction_id=transaction_id,
-        account_id=from_account,
+        account_id=_to_uuid(from_account),
         entry_type=EntryType.DEBIT,
         amount=amount,
         currency=currency,
         description=description,
-        status=EntryStatus.PENDING,
-        created_at=now,
+        status=LedgerStatus.PENDING,
     )
     credit = LedgerEntry(
-        entry_id=str(uuid4()),
         transaction_id=transaction_id,
-        account_id=to_account,
+        account_id=_to_uuid(to_account),
         entry_type=EntryType.CREDIT,
         amount=amount,
         currency=currency,
         description=description,
-        status=EntryStatus.PENDING,
-        created_at=now,
+        status=LedgerStatus.PENDING,
     )
 
-    _entries.extend([debit, credit])
+    session_factory = _get_session_factory()
+    async with session_factory() as session:
+        session.add(debit)
+        session.add(credit)
+        await session.commit()
 
     log.info(
         "ledger.transfer_created",
-        transaction_id=transaction_id,
+        transaction_id=str(transaction_id),
         from_account=from_account,
         to_account=to_account,
         amount=str(amount),
         currency=currency,
     )
-    return transaction_id
+    return str(transaction_id)
 
 
 async def get_balance(account_id: str) -> Decimal:
@@ -126,26 +137,25 @@ async def get_balance(account_id: str) -> Decimal:
 
     Balance = sum(credits) - sum(debits) where status = settled.
     """
-    credits = sum(
-        (
-            e.amount
-            for e in _entries
-            if e.account_id == account_id
-            and e.entry_type == EntryType.CREDIT
-            and e.status == EntryStatus.SETTLED
-        ),
-        Decimal("0"),
-    )
-    debits = sum(
-        (
-            e.amount
-            for e in _entries
-            if e.account_id == account_id
-            and e.entry_type == EntryType.DEBIT
-            and e.status == EntryStatus.SETTLED
-        ),
-        Decimal("0"),
-    )
+    session_factory = _get_session_factory()
+    async with session_factory() as session:
+        credit_result = await session.execute(
+            select(func.coalesce(func.sum(LedgerEntry.amount), 0)).where(
+                LedgerEntry.account_id == _to_uuid(account_id),
+                LedgerEntry.entry_type == EntryType.CREDIT,
+                LedgerEntry.status == LedgerStatus.SETTLED,
+            ),
+        )
+        credits = Decimal(str(credit_result.scalar_one()))
+
+        debit_result = await session.execute(
+            select(func.coalesce(func.sum(LedgerEntry.amount), 0)).where(
+                LedgerEntry.account_id == _to_uuid(account_id),
+                LedgerEntry.entry_type == EntryType.DEBIT,
+                LedgerEntry.status == LedgerStatus.SETTLED,
+            ),
+        )
+        debits = Decimal(str(debit_result.scalar_one()))
 
     balance = credits - debits
     log.debug("ledger.balance", account_id=account_id, balance=str(balance))
@@ -153,91 +163,114 @@ async def get_balance(account_id: str) -> Decimal:
 
 
 async def settle_transaction(transaction_id: str) -> None:
-    """Mark all entries belonging to *transaction_id* as settled.
-
-    Raises:
-        ValueError: If the transaction is not found or entries are not
-            balanced (safety check).
-    """
-    entries = [e for e in _entries if e.transaction_id == transaction_id]
-
-    if not entries:
-        raise ValueError(f"Transaction {transaction_id} not found")
-
-    # Safety: verify matching debit + credit
-    debit_total = sum(
-        (e.amount for e in entries if e.entry_type == EntryType.DEBIT),
-        Decimal("0"),
-    )
-    credit_total = sum(
-        (e.amount for e in entries if e.entry_type == EntryType.CREDIT),
-        Decimal("0"),
-    )
-    if debit_total != credit_total:
-        raise ValueError(
-            f"Imbalanced transaction {transaction_id}: debit={debit_total}, credit={credit_total}",
+    """Mark all entries belonging to *transaction_id* as settled."""
+    session_factory = _get_session_factory()
+    async with session_factory() as session:
+        result = await session.execute(
+            select(LedgerEntry).where(LedgerEntry.transaction_id == _to_uuid(transaction_id)),
         )
+        entries = list(result.scalars().all())
 
-    for entry in entries:
-        entry.status = EntryStatus.SETTLED
+        if not entries:
+            msg = f"Transaction {transaction_id} not found"
+            raise ValueError(msg)
+
+        debit_total = sum(
+            (Decimal(str(e.amount)) for e in entries if e.entry_type == EntryType.DEBIT),
+            Decimal("0"),
+        )
+        credit_total = sum(
+            (Decimal(str(e.amount)) for e in entries if e.entry_type == EntryType.CREDIT),
+            Decimal("0"),
+        )
+        if debit_total != credit_total:
+            msg = f"Imbalanced transaction {transaction_id}: debit={debit_total}, credit={credit_total}"
+            raise ValueError(msg)
+
+        await session.execute(
+            update(LedgerEntry)
+            .where(LedgerEntry.transaction_id == _to_uuid(transaction_id))
+            .values(status=LedgerStatus.SETTLED),
+        )
+        await session.commit()
 
     log.info("ledger.transaction_settled", transaction_id=transaction_id)
 
 
 async def fail_transaction(transaction_id: str) -> None:
-    """Mark all entries belonging to *transaction_id* as failed.
+    """Mark all entries belonging to *transaction_id* as failed."""
+    session_factory = _get_session_factory()
+    async with session_factory() as session:
+        result = await session.execute(
+            select(LedgerEntry).where(LedgerEntry.transaction_id == _to_uuid(transaction_id)),
+        )
+        entries = list(result.scalars().all())
 
-    Used when a payment is refused or reversed.
+        if not entries:
+            msg = f"Transaction {transaction_id} not found"
+            raise ValueError(msg)
 
-    Raises:
-        ValueError: If the transaction is not found.
-    """
-    entries = [e for e in _entries if e.transaction_id == transaction_id]
-
-    if not entries:
-        raise ValueError(f"Transaction {transaction_id} not found")
-
-    for entry in entries:
-        entry.status = EntryStatus.FAILED
+        await session.execute(
+            update(LedgerEntry)
+            .where(LedgerEntry.transaction_id == _to_uuid(transaction_id))
+            .values(status=LedgerStatus.FAILED),
+        )
+        await session.commit()
 
     log.info("ledger.transaction_failed", transaction_id=transaction_id)
 
 
-async def get_entries_by_transaction(transaction_id: str) -> list[LedgerEntry]:
+async def get_entries_by_transaction(transaction_id: str) -> list[LedgerEntryDTO]:
     """Return all entries for a given *transaction_id*."""
-    return [e for e in _entries if e.transaction_id == transaction_id]
+    session_factory = _get_session_factory()
+    async with session_factory() as session:
+        result = await session.execute(
+            select(LedgerEntry).where(LedgerEntry.transaction_id == _to_uuid(transaction_id)),
+        )
+        return [_to_dto(e) for e in result.scalars().all()]
 
 
-async def get_entries_by_account(account_id: str) -> list[LedgerEntry]:
+async def get_entries_by_account(account_id: str) -> list[LedgerEntryDTO]:
     """Return all entries for a given *account_id*, newest first."""
-    entries = [e for e in _entries if e.account_id == account_id]
-    return sorted(entries, key=lambda e: e.created_at, reverse=True)
+    session_factory = _get_session_factory()
+    async with session_factory() as session:
+        result = await session.execute(
+            select(LedgerEntry)
+            .where(LedgerEntry.account_id == _to_uuid(account_id))
+            .order_by(LedgerEntry.created_at.desc()),
+        )
+        return [_to_dto(e) for e in result.scalars().all()]
 
 
-async def get_recent_entries(limit: int = 50) -> list[LedgerEntry]:
+async def get_recent_entries(limit: int = 50) -> list[LedgerEntryDTO]:
     """Return the most recent ledger entries across all accounts."""
-    sorted_entries = sorted(_entries, key=lambda e: e.created_at, reverse=True)
-    return sorted_entries[:limit]
+    session_factory = _get_session_factory()
+    async with session_factory() as session:
+        result = await session.execute(
+            select(LedgerEntry)
+            .order_by(LedgerEntry.created_at.desc())
+            .limit(limit),
+        )
+        return [_to_dto(e) for e in result.scalars().all()]
 
 
 async def get_available_balance(account_id: str) -> Decimal:
     """Return the available balance for *account_id*.
 
-    Available = settled balance minus pending debits.  This is the amount
-    that can be reserved for new transfers.
+    Available = settled balance minus pending debits.
     """
     settled = await get_balance(account_id)
 
-    pending_debits = sum(
-        (
-            e.amount
-            for e in _entries
-            if e.account_id == account_id
-            and e.entry_type == EntryType.DEBIT
-            and e.status == EntryStatus.PENDING
-        ),
-        Decimal("0"),
-    )
+    session_factory = _get_session_factory()
+    async with session_factory() as session:
+        result = await session.execute(
+            select(func.coalesce(func.sum(LedgerEntry.amount), 0)).where(
+                LedgerEntry.account_id == _to_uuid(account_id),
+                LedgerEntry.entry_type == EntryType.DEBIT,
+                LedgerEntry.status == LedgerStatus.PENDING,
+            ),
+        )
+        pending_debits = Decimal(str(result.scalar_one()))
 
     available = settled - pending_debits
     log.debug(

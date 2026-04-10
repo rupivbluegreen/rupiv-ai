@@ -7,6 +7,7 @@ reservation, settlement, and graph compilation.
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -25,7 +26,6 @@ from rupiv.billing.adyen_client import AdyenTransfer
 from rupiv.billing.ledger import (
     EntryStatus,
     EntryType,
-    _entries,
     create_transfer,
     get_balance,
     get_entries_by_transaction,
@@ -38,10 +38,16 @@ from rupiv.billing.ledger import (
 
 
 @pytest.fixture(autouse=True)
-def _clear_state() -> None:
-    """Clear in-memory ledger and agent accounts before each test."""
-    _entries.clear()
-    _agent_accounts.clear()
+def _patch_ledger_factory(db_engine: Any) -> Any:
+    """Patch the ledger to use the test DB engine instead of production DB."""
+    from unittest.mock import patch
+
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    factory = async_sessionmaker(db_engine, expire_on_commit=False)
+    with patch("rupiv.billing.ledger._get_session_factory", return_value=factory):
+        _agent_accounts.clear()
+        yield
 
 
 @pytest.fixture
@@ -234,11 +240,12 @@ class TestLedgerReserve:
         assert len(debit_entries) == 1
         assert len(credit_entries) == 1
 
-        assert debit_entries[0].account_id == buyer_id
+        from rupiv.billing.ledger import _to_uuid
+        assert debit_entries[0].account_id == str(_to_uuid(buyer_id))
         assert debit_entries[0].amount == Decimal("25.00")
         assert debit_entries[0].status == EntryStatus.PENDING
 
-        assert credit_entries[0].account_id == seller_id
+        assert credit_entries[0].account_id == str(_to_uuid(seller_id))
         assert credit_entries[0].amount == Decimal("25.00")
         assert credit_entries[0].status == EntryStatus.PENDING
 

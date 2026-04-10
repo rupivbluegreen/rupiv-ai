@@ -200,6 +200,15 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    # Observability + audit middleware
+    # Starlette: last added = outermost. Tracing wraps audit so trace IDs
+    # are available when audit entries are written.
+    from rupiv.api.middleware.audit import AuditMiddleware
+    from rupiv.api.middleware.tracing import TracingMiddleware
+
+    app.add_middleware(AuditMiddleware)
+    app.add_middleware(TracingMiddleware)
+
     # Include v1 API router
     app.include_router(v1_router)
 

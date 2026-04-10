@@ -21,6 +21,15 @@ _WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 # Paths to skip (health checks, metrics, auth, etc.)
 _SKIP_PREFIXES = ("/health", "/metrics", "/docs", "/openapi.json", "/redoc")
 
+# Sensitive resource paths where GET operations should also be audited
+_SENSITIVE_READ_PATTERNS = (
+    "/v1/customers/",
+    "/v1/invoices/",
+    "/v1/portal/invoices/",
+    "/v1/payment-methods",
+    "/v1/webhook-endpoints",
+)
+
 
 class AuditMiddleware(BaseHTTPMiddleware):
     """Fire-and-forget audit logging for every write request.
@@ -38,7 +47,13 @@ class AuditMiddleware(BaseHTTPMiddleware):
     ) -> Response:
         response = await call_next(request)
 
-        if request.method not in _WRITE_METHODS:
+        is_write = request.method in _WRITE_METHODS
+        is_sensitive_read = (
+            request.method == "GET"
+            and any(request.url.path.startswith(p) for p in _SENSITIVE_READ_PATTERNS)
+        )
+
+        if not is_write and not is_sensitive_read:
             return response
 
         if any(request.url.path.startswith(p) for p in _SKIP_PREFIXES):
@@ -78,6 +93,7 @@ async def _record_audit(request: Request, response: Response) -> None:
                 pass
 
         action_map: dict[str, str] = {
+            "GET": "read",
             "POST": "create",
             "PUT": "update",
             "PATCH": "update",

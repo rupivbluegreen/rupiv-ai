@@ -28,6 +28,8 @@ dependencies = [
     "opentelemetry-instrumentation-fastapi>=0.50b",
     # HTTP client (Mollie / Adyen)
     "httpx>=0.28",
+    # PDF generation
+    "fpdf2>=2.8",
     # Auth
     "python-jose[cryptography]>=3.3",
     "python-dateutil>=2.9.0.post0",

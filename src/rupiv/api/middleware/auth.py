@@ -5,16 +5,21 @@ from __future__ import annotations
 import hashlib
 import secrets
 from datetime import UTC, datetime
+from typing import Any
 
+import httpx
 import structlog
 from fastapi import Depends, HTTPException, Request, Security, status
 from fastapi.security import APIKeyHeader, HTTPAuthorizationCredentials, HTTPBearer
+from jose import JWTError, jwt
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from rupiv.config import get_settings
 from rupiv.db import get_db
 from rupiv.models.api_key import ApiKey
 from rupiv.models.customer import Customer
+from rupiv.models.customer_user import CustomerUser
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger()
 
@@ -89,23 +94,97 @@ async def verify_api_key(key: str, session: AsyncSession) -> ApiKey:
 
 
 # ---------------------------------------------------------------------------
-# JWT stub (Clerk / Auth0 integration placeholder)
+# Clerk JWT verification via JWKS
 # ---------------------------------------------------------------------------
 
+_jwks_cache: dict[str, Any] | None = None
+_jwks_cache_ts: float = 0.0
+_JWKS_CACHE_TTL_SECONDS: float = 3600.0  # 1 hour
 
-async def _verify_jwt_stub(token: str) -> dict:
-    """Stub JWT verification — validates format only.
 
-    Real Clerk/Auth0 verification will replace this function.
-    """
-    parts = token.split(".")
-    if len(parts) != 3:
+async def _fetch_clerk_jwks() -> dict[str, Any]:
+    """Fetch Clerk's JWKS, with in-memory caching (1h TTL)."""
+    global _jwks_cache, _jwks_cache_ts  # noqa: PLW0603
+
+    now = datetime.now(UTC).timestamp()
+    if _jwks_cache is not None and (now - _jwks_cache_ts) < _JWKS_CACHE_TTL_SECONDS:
+        return _jwks_cache
+
+    settings = get_settings()
+    jwks_url = settings.CLERK_JWKS_URL
+    if not jwks_url:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="CLERK_JWKS_URL not configured — JWT auth unavailable",
+        )
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(jwks_url)
+            resp.raise_for_status()
+            fetched: dict[str, Any] = resp.json()
+            _jwks_cache = fetched
+            _jwks_cache_ts = now
+            return fetched
+    except httpx.HTTPError as exc:
+        logger.error("clerk_jwks_fetch_failed", error=str(exc))
+        if _jwks_cache is not None:
+            return _jwks_cache  # stale cache better than failure
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Unable to fetch Clerk JWKS for JWT verification",
+        ) from exc
+
+
+def _find_signing_key(jwks: dict[str, Any], token: str) -> dict[str, Any]:
+    """Find the JWK matching the token's ``kid`` header."""
+    try:
+        unverified_header = jwt.get_unverified_header(token)
+    except JWTError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Malformed JWT: expected three dot-separated segments",
+            detail="Malformed JWT header",
+        ) from exc
+
+    kid = unverified_header.get("kid")
+    for key in jwks.get("keys", []):
+        if key.get("kid") == kid:
+            return key
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="JWT signing key not found in JWKS",
+    )
+
+
+async def verify_jwt(token: str) -> dict[str, Any]:
+    """Verify a Clerk-issued JWT and return its claims."""
+    jwks = await _fetch_clerk_jwks()
+    signing_key = _find_signing_key(jwks, token)
+
+    try:
+        claims: dict[str, Any] = jwt.decode(
+            token,
+            signing_key,
+            algorithms=["RS256"],
+            options={"verify_aud": False},
         )
-    logger.info("auth_jwt_stub_verified")
-    return {"sub": "stub", "token": token}
+    except JWTError as exc:
+        logger.warning("auth_jwt_verification_failed", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired JWT",
+        ) from exc
+
+    sub = claims.get("sub")
+    if not sub:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="JWT missing 'sub' claim",
+        )
+
+    logger.info("auth_jwt_verified", sub=sub)
+    return claims
 
 
 # ---------------------------------------------------------------------------
@@ -147,14 +226,34 @@ async def get_current_customer(
 
     # --- Path 2: Bearer JWT ---
     if bearer is not None:
-        _claims = await _verify_jwt_stub(bearer.credentials)
-        # TODO: Once Clerk/Auth0 is wired up, resolve claims["sub"] to a
-        #       Customer row.  For now, return a 501 so callers know this
-        #       path isn't fully implemented yet.
-        raise HTTPException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            detail="JWT authentication is not yet fully implemented. Use an API key.",
+        claims = await verify_jwt(bearer.credentials)
+        sub: str = claims["sub"]
+
+        # Resolve Clerk user ID to a CustomerUser → Customer
+        cu_result = await session.execute(
+            select(CustomerUser).where(CustomerUser.clerk_user_id == sub),
         )
+        customer_user: CustomerUser | None = cu_result.scalar_one_or_none()
+
+        if customer_user is None:
+            logger.warning("auth_jwt_no_customer_user", clerk_user_id=sub)
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No customer account linked to this user. Complete onboarding first.",
+            )
+
+        customer_result = await session.execute(
+            select(Customer).where(Customer.id == customer_user.customer_id),
+        )
+        customer = customer_result.scalar_one_or_none()
+        if customer is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Customer associated with user no longer exists",
+            )
+
+        request.state.customer_user = customer_user
+        return customer
 
     # --- No credentials supplied ---
     logger.warning("auth_no_credentials")

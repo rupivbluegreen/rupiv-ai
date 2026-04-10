@@ -19,7 +19,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from rupiv.billing.payment import PaymentMethod, PaymentResult, charge_invoice
+from rupiv.billing.payment import PaymentMethod, PaymentResult, charge_invoice_routed
 from rupiv.config import get_settings
 from rupiv.db import _get_session_factory
 from rupiv.models.invoice import Invoice, InvoiceStatus
@@ -64,26 +64,36 @@ async def process_invoice_payment(
         currency=invoice.currency,
     )
 
-    # Build a domain-compatible invoice object for the charge_invoice stub.
-    # The billing.payment module uses getattr, so a simple namespace works.
-    class _InvoiceProxy:
-        def __init__(self, inv: Invoice) -> None:
-            self.invoice_id = str(inv.id)
-            self.total = Decimal(str(inv.total))
-            self.currency = inv.currency
+    # Look up the customer's default payment method from the database
+    from rupiv.models.payment_method import PaymentMethod as PaymentMethodModel
 
-    invoice_proxy = _InvoiceProxy(invoice)
+    pm_stmt = select(PaymentMethodModel).where(
+        PaymentMethodModel.customer_id == invoice.customer_id,
+        PaymentMethodModel.is_default.is_(True),
+    )
+    pm_result = await session.execute(pm_stmt)
+    pm_row: PaymentMethodModel | None = pm_result.scalar_one_or_none()
 
-    # TODO: Resolve real payment method from customer's stored methods.
-    # For MVP we use a stub payment method.
+    if pm_row is None:
+        log.warning(
+            "payment_worker.no_default_payment_method",
+            invoice_id=invoice_id,
+            customer_id=str(invoice.customer_id),
+        )
+        return False
+
     payment_method = PaymentMethod(
-        method_id=f"pm_{invoice.customer_id}",
-        provider="mollie",
-        type="ideal",
+        method_id=pm_row.provider_method_id,
+        provider=pm_row.provider,
+        type=pm_row.type,
     )
 
+    settings = get_settings()
+
     try:
-        result: PaymentResult = await charge_invoice(invoice_proxy, payment_method)
+        result: PaymentResult = await charge_invoice_routed(
+            invoice, payment_method, settings,
+        )
     except Exception:
         log.error(
             "payment_worker.charge_exception",

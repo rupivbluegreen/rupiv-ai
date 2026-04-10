@@ -56,6 +56,10 @@ class Settings(BaseSettings):
         default=None,
         description="Clerk secret key for JWT verification (optional in dev)",
     )
+    CLERK_JWKS_URL: str | None = Field(
+        default=None,
+        description="Clerk JWKS endpoint URL for JWT verification (e.g. https://<clerk-domain>/.well-known/jwks.json)",
+    )
 
     # --- Application ---
     APP_ENV: str = Field(

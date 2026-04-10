@@ -16,6 +16,13 @@ const PricingStudio = React.lazy(() => import('./pages/PricingStudio'));
 const Policies = React.lazy(() => import('./pages/Policies'));
 const PaymentAnalytics = React.lazy(() => import('./pages/PaymentAnalytics'));
 const Onboarding = React.lazy(() => import('./pages/Onboarding'));
+const Alerts = React.lazy(() => import('./pages/Alerts'));
+const ERPExport = React.lazy(() => import('./pages/ERPExport'));
+const Transformations = React.lazy(() => import('./pages/Transformations'));
+const PortalLayout = React.lazy(() => import('./pages/portal/PortalLayout'));
+const PortalDashboard = React.lazy(() => import('./pages/portal/PortalDashboard'));
+const PortalInvoices = React.lazy(() => import('./pages/portal/PortalInvoices'));
+const PortalUsage = React.lazy(() => import('./pages/portal/PortalUsage'));
 
 function LoadingSpinner() {
   return (
@@ -37,12 +44,27 @@ const queryClient = new QueryClient({
 function AppLayout() {
   const location = useLocation();
   const isOnboarding = location.pathname === '/onboarding';
+  const isPortal = location.pathname.startsWith('/portal');
 
   if (isOnboarding) {
     return (
       <Suspense fallback={<LoadingSpinner />}>
         <Routes>
           <Route path="/onboarding" element={<Onboarding />} />
+        </Routes>
+      </Suspense>
+    );
+  }
+
+  if (isPortal) {
+    return (
+      <Suspense fallback={<LoadingSpinner />}>
+        <Routes>
+          <Route path="/portal" element={<PortalLayout />}>
+            <Route index element={<PortalDashboard />} />
+            <Route path="invoices" element={<PortalInvoices />} />
+            <Route path="usage" element={<PortalUsage />} />
+          </Route>
         </Routes>
       </Suspense>
     );
@@ -66,6 +88,9 @@ function AppLayout() {
             <Route path="/pricing-studio" element={<PricingStudio />} />
             <Route path="/policies" element={<Policies />} />
             <Route path="/payment-analytics" element={<PaymentAnalytics />} />
+            <Route path="/alerts" element={<Alerts />} />
+            <Route path="/erp-export" element={<ERPExport />} />
+            <Route path="/transformations" element={<Transformations />} />
           </Routes>
         </Suspense>
       </main>
