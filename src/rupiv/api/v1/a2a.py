@@ -12,7 +12,9 @@ from decimal import Decimal
 from enum import Enum
 
 import structlog
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
+from rupiv.api.middleware.auth import get_current_api_key
+from rupiv.models.api_key import ApiKey
 from pydantic import BaseModel, Field
 
 from rupiv.agents.a2a_agent import initiate_a2a_payment
@@ -153,7 +155,10 @@ def _map_settlement_to_intent_status(settlement: str | None, error: str | None) 
     status_code=status.HTTP_202_ACCEPTED,
     summary="Create an agent-to-agent payment intent",
 )
-async def create_a2a_intent(payload: A2AIntentCreate) -> A2AIntentResponse:
+async def create_a2a_intent(
+    payload: A2AIntentCreate,
+    _api_key: ApiKey = Depends(get_current_api_key),
+) -> A2AIntentResponse:
     """Create a new A2A payment intent and run the settlement agent graph.
 
     The compliance agent verifies policy rules, reserves funds from the
@@ -197,7 +202,10 @@ async def create_a2a_intent(payload: A2AIntentCreate) -> A2AIntentResponse:
     response_model=list[LedgerEntryResponse],
     summary="List recent A2A transactions",
 )
-async def list_a2a_intents(limit: int = 50) -> list[LedgerEntryResponse]:
+async def list_a2a_intents(
+    limit: int = 50,
+    _api_key: ApiKey = Depends(get_current_api_key),
+) -> list[LedgerEntryResponse]:
     """List recent A2A ledger entries (most recent first).
 
     Returns the raw double-entry ledger entries. Each A2A transaction
@@ -212,7 +220,10 @@ async def list_a2a_intents(limit: int = 50) -> list[LedgerEntryResponse]:
     response_model=TransactionDetailResponse,
     summary="Get A2A transaction details",
 )
-async def get_a2a_intent(transaction_id: str) -> TransactionDetailResponse:
+async def get_a2a_intent(
+    transaction_id: str,
+    _api_key: ApiKey = Depends(get_current_api_key),
+) -> TransactionDetailResponse:
     """Retrieve the debit + credit entries for a specific transaction."""
     entries = await ledger.get_entries_by_transaction(transaction_id)
     if not entries:
@@ -232,7 +243,10 @@ async def get_a2a_intent(transaction_id: str) -> TransactionDetailResponse:
     response_model=BalanceResponse,
     summary="Get account balance",
 )
-async def get_account_balance(account_id: str) -> BalanceResponse:
+async def get_account_balance(
+    account_id: str,
+    _api_key: ApiKey = Depends(get_current_api_key),
+) -> BalanceResponse:
     """Return the settled and available balance for an agent account.
 
     - ``settled_balance``: Sum of settled credits minus settled debits.

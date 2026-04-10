@@ -6,12 +6,72 @@ Mirrors the policy engine pattern — stateless, no I/O, pure functions.
 
 from __future__ import annotations
 
+import ast
+import operator
 from copy import deepcopy
 from typing import Any
 
 import structlog
 
 log: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
+
+# ---------------------------------------------------------------------------
+# Safe expression evaluator (replaces eval())
+# ---------------------------------------------------------------------------
+
+_SAFE_OPS: dict[type, Any] = {
+    ast.Add: operator.add,
+    ast.Sub: operator.sub,
+    ast.Mult: operator.mul,
+    ast.Div: operator.truediv,
+    ast.FloorDiv: operator.floordiv,
+    ast.Mod: operator.mod,
+    ast.Pow: operator.pow,
+    ast.USub: operator.neg,
+}
+
+
+def _safe_eval_expr(expression: str, variables: dict[str, Any]) -> Any:
+    """Evaluate a simple math/string expression safely via AST.
+
+    Supports: arithmetic (+, -, *, /, //, %, **), numeric literals,
+    string literals, and named variables from *variables* dict.
+    Does NOT support: function calls, attribute access, imports, comprehensions.
+    """
+    try:
+        tree = ast.parse(expression, mode="eval")
+    except SyntaxError:
+        msg = f"Invalid expression syntax: {expression}"
+        raise ValueError(msg) from None
+
+    def _eval_node(node: ast.expr) -> Any:
+        if isinstance(node, ast.Expression):
+            return _eval_node(node.body)
+        if isinstance(node, ast.Constant):
+            return node.value
+        if isinstance(node, ast.Name):
+            if node.id in variables:
+                return variables[node.id]
+            msg = f"Unknown variable: {node.id}"
+            raise ValueError(msg)
+        if isinstance(node, ast.UnaryOp):
+            op_fn = _SAFE_OPS.get(type(node.op))
+            if op_fn is None:
+                msg = f"Unsupported unary operator: {type(node.op).__name__}"
+                raise ValueError(msg)
+            return op_fn(_eval_node(node.operand))
+        if isinstance(node, ast.BinOp):
+            op_fn = _SAFE_OPS.get(type(node.op))
+            if op_fn is None:
+                msg = f"Unsupported operator: {type(node.op).__name__}"
+                raise ValueError(msg)
+            left = _eval_node(node.left)
+            right = _eval_node(node.right)
+            return op_fn(left, right)
+        msg = f"Unsupported expression node: {type(node).__name__}"
+        raise ValueError(msg)
+
+    return _eval_node(tree.body)
 
 
 # ---------------------------------------------------------------------------
@@ -102,8 +162,8 @@ def apply_step(event: dict[str, Any], step: dict[str, Any]) -> dict[str, Any] | 
         if source_val is not None:
             expression = step.get("expression", "value")
             try:
-                result = eval(expression, {"__builtins__": {}}, {"value": source_val})  # noqa: S307
-            except Exception:
+                result = _safe_eval_expr(expression, {"value": source_val})
+            except (ValueError, TypeError, ZeroDivisionError):
                 result = source_val
             _set_field(event, step["target"], result)
         return event

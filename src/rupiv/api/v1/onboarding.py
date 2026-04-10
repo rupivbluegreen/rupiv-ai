@@ -164,8 +164,7 @@ async def signup(
     """
     logger.info(
         "onboarding_signup",
-        company_name=payload.company_name,
-        email=payload.email,
+        country_code=payload.country_code,
     )
 
     # 1. Check for duplicate email

@@ -155,12 +155,16 @@ class TestWebSocketConnect:
     """Integration tests for the /v1/stream/events WebSocket endpoint."""
 
     def test_websocket_connect_accepted(self, ws_client: TestClient) -> None:
-        """Connecting to the WebSocket endpoint should succeed."""
+        """Connecting to the WebSocket endpoint should succeed with valid API key."""
         mock_redis, mock_pubsub = _make_mock_redis()
         mock_pubsub.listen = MagicMock(return_value=_empty_async_gen())
 
-        with patch("redis.asyncio.from_url", return_value=mock_redis):
-            with ws_client.websocket_connect("/v1/stream/events") as ws:
+        async def _mock_auth(api_key: str | None) -> bool:
+            return api_key is not None and len(api_key) > 0
+
+        with patch("redis.asyncio.from_url", return_value=mock_redis), \
+             patch("rupiv.api.v1.stream._authenticate_api_key", _mock_auth):
+            with ws_client.websocket_connect("/v1/stream/events?api_key=test_key") as ws:
                 # Connection was accepted -- close gracefully
                 ws.close()
 
@@ -172,6 +176,10 @@ class TestWebSocketConnect:
 
     def test_websocket_receives_broadcast_event(self, ws_client: TestClient) -> None:
         """The WebSocket should receive events forwarded from Redis pub/sub."""
+
+        async def _mock_auth(api_key: str | None) -> bool:
+            return api_key is not None and len(api_key) > 0
+
         sample_event: str = json.dumps(
             {
                 "event_type": "outcome",
@@ -192,8 +200,9 @@ class TestWebSocketConnect:
         mock_redis, mock_pubsub = _make_mock_redis()
         mock_pubsub.listen = MagicMock(return_value=_one_message_gen())
 
-        with patch("redis.asyncio.from_url", return_value=mock_redis):
-            with ws_client.websocket_connect("/v1/stream/events") as ws:
+        with patch("redis.asyncio.from_url", return_value=mock_redis), \
+             patch("rupiv.api.v1.stream._authenticate_api_key", _mock_auth):
+            with ws_client.websocket_connect("/v1/stream/events?api_key=test_key") as ws:
                 data: str = ws.receive_text()
                 parsed: dict[str, Any] = json.loads(data)
                 assert parsed["event_type"] == "outcome"

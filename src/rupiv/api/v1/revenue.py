@@ -14,7 +14,9 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from rupiv.api.middleware.auth import get_current_api_key
 from rupiv.db import get_db
+from rupiv.models.api_key import ApiKey
 from rupiv.models.revenue_schedule import (
     EntryType,
     RevenueEntry,
@@ -136,6 +138,7 @@ async def list_schedules(
     limit: int = 20,
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> RevenueScheduleListResponse:
     """Return a paginated list of revenue schedules, optionally filtered."""
     logger.info(
@@ -183,6 +186,7 @@ async def list_schedules(
 async def get_schedule(
     schedule_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> RevenueScheduleResponse:
     """Return a single revenue schedule by ID, including all entries."""
     logger.info("get_revenue_schedule", schedule_id=str(schedule_id))
@@ -213,6 +217,7 @@ async def get_schedule(
 async def generate_schedule_endpoint(
     body: GenerateScheduleRequest,
     db: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> RevenueScheduleResponse:
     """Generate an IFRS 15 revenue schedule for a subscription.
 
@@ -380,6 +385,7 @@ async def list_journal_entries(
     limit: int = 100,
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> JournalEntryListResponse:
     """Return GL journal entries (recognised revenue) for a given period."""
     logger.info("list_journal_entries", period=period, limit=limit, offset=offset)

@@ -12,7 +12,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from rupiv.api.middleware.auth import get_current_api_key
 from rupiv.db import get_db
+from rupiv.models.api_key import ApiKey
 from rupiv.models.transformation_rule import TransformationRule
 from rupiv.transformations.engine import transform_event
 
@@ -100,6 +102,7 @@ class TestTransformationResponse(BaseModel):
 @router.get("", response_model=list[TransformationRuleResponse])
 async def list_rules(
     db: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> list[TransformationRuleResponse]:
     """List all transformation rules, ordered by priority."""
     result = await db.execute(select(TransformationRule).order_by(TransformationRule.priority))
@@ -115,6 +118,7 @@ async def list_rules(
 async def create_rule(
     payload: TransformationRuleCreate,
     db: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> TransformationRuleResponse:
     """Create a new transformation rule."""
     rule = TransformationRule(
@@ -137,6 +141,7 @@ async def update_rule(
     rule_id: uuid.UUID,
     payload: TransformationRuleUpdate,
     db: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> TransformationRuleResponse:
     """Update an existing transformation rule."""
     result = await db.execute(
@@ -160,6 +165,7 @@ async def update_rule(
 async def delete_rule(
     rule_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> None:
     """Soft-delete a transformation rule (set is_active=False)."""
     result = await db.execute(

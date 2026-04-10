@@ -99,7 +99,7 @@ async def verify_api_key(key: str, session: AsyncSession) -> ApiKey:
 
 _jwks_cache: dict[str, Any] | None = None
 _jwks_cache_ts: float = 0.0
-_JWKS_CACHE_TTL_SECONDS: float = 3600.0  # 1 hour
+_JWKS_CACHE_TTL_SECONDS: float = 900.0  # 15 minutes
 
 
 async def _fetch_clerk_jwks() -> dict[str, Any]:
@@ -163,11 +163,23 @@ async def verify_jwt(token: str) -> dict[str, Any]:
     signing_key = _find_signing_key(jwks, token)
 
     try:
+        settings = get_settings()
+        decode_options: dict[str, bool] = {}
+        audience: str | None = None
+
+        # If CLERK_AUDIENCE is configured, enforce audience validation.
+        # Otherwise skip for backward compat with existing Clerk setups.
+        if hasattr(settings, "CLERK_AUDIENCE") and settings.CLERK_AUDIENCE:
+            audience = settings.CLERK_AUDIENCE
+        else:
+            decode_options["verify_aud"] = False
+
         claims: dict[str, Any] = jwt.decode(
             token,
             signing_key,
             algorithms=["RS256"],
-            options={"verify_aud": False},
+            audience=audience,
+            options=decode_options,
         )
     except JWTError as exc:
         logger.warning("auth_jwt_verification_failed", error=str(exc))

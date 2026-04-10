@@ -7,6 +7,8 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from rupiv.api.middleware.auth import get_current_api_key
+from rupiv.models.api_key import ApiKey
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -38,6 +40,7 @@ async def list_audit_logs(
     limit: int = Query(100, ge=1, le=10_000),
     format: str = Query("json", regex="^(json|csv)$"),
     session: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> Any:
     """List audit logs with optional filters.
 
@@ -97,6 +100,7 @@ async def get_resource_audit_trail(
     limit: int = Query(100, ge=1, le=10_000),
     offset: int = Query(0, ge=0),
     session: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> list[dict[str, Any]]:
     """Get the full audit trail for a specific resource."""
     logs = await get_audit_trail(
@@ -134,6 +138,7 @@ _SYSTEM_ACTOR = uuid.UUID("00000000-0000-0000-0000-000000000000")
 async def data_export(
     customer_id: uuid.UUID,
     session: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> dict[str, Any]:
     """GDPR portable data export for a customer."""
     try:
@@ -148,6 +153,7 @@ async def data_export(
 async def anonymize(
     customer_id: uuid.UUID,
     session: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> dict[str, Any]:
     """Anonymize a customer's PII (GDPR right to erasure)."""
     try:
@@ -161,6 +167,7 @@ async def anonymize(
 @router.get("/retention-report")
 async def retention_report(
     session: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> dict[str, Any]:
     """Data retention overview for compliance audits."""
     return await get_data_retention_report(session)

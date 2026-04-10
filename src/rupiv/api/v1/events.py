@@ -12,8 +12,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from rupiv.api.middleware.auth import get_current_api_key
 from rupiv.billing.metering import ingest_event
 from rupiv.db import get_db
+from rupiv.models.api_key import ApiKey
 from rupiv.models.event import Event
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger()
@@ -74,6 +76,7 @@ class EventResponse(BaseModel):
 async def create_event(
     payload: EventCreate,
     db: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> EventResponse:
     """Ingest a usage or outcome event for later processing.
 

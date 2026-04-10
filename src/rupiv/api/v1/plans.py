@@ -14,7 +14,9 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from rupiv.api.middleware.auth import get_current_api_key
 from rupiv.db import get_db
+from rupiv.models.api_key import ApiKey
 from rupiv.models.plan import Plan, PricingRule
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger()
@@ -217,6 +219,7 @@ async def list_plans(
     limit: int = 20,
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> PlanListResponse:
     """Return a paginated list of plans."""
     logger.info("list_plans", limit=limit, offset=offset)
@@ -246,6 +249,7 @@ async def list_plans(
 async def get_plan(
     plan_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> PlanResponse:
     """Return a single plan by ID."""
     logger.info("get_plan", plan_id=str(plan_id))
@@ -272,6 +276,7 @@ async def get_plan(
 async def create_plan(
     payload: PlanCreate,
     db: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> PlanResponse:
     """Create a new billing plan."""
     logger.info("create_plan", name=payload.name)
@@ -304,6 +309,7 @@ async def update_plan(
     plan_id: uuid.UUID,
     payload: PlanUpdate,
     db: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> PlanResponse:
     """Partially update a plan."""
     logger.info("update_plan", plan_id=str(plan_id))

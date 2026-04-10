@@ -13,8 +13,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from rupiv.api.middleware.auth import get_current_api_key
 from rupiv.db import get_db
 from rupiv.erp.formatters import format_entries
+from rupiv.models.api_key import ApiKey
 from rupiv.models.erp_connection import ERPConnection, ExportLog
 from rupiv.revenue_recognition.journal import JournalEntry, generate_journal_entries
 from rupiv.revenue_recognition.schedules import RevenueScheduleEntry
@@ -91,6 +93,7 @@ class ExportLogResponse(BaseModel):
 @router.get("/connections", response_model=list[ERPConnectionResponse])
 async def list_connections(
     db: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> list[ERPConnectionResponse]:
     """List all ERP connections."""
     result = await db.execute(select(ERPConnection).order_by(ERPConnection.created_at.desc()))
@@ -106,6 +109,7 @@ async def list_connections(
 async def create_connection(
     payload: ERPConnectionCreate,
     db: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> ERPConnectionResponse:
     """Create a new ERP connection."""
     conn = ERPConnection(
@@ -125,6 +129,7 @@ async def update_connection(
     conn_id: uuid.UUID,
     payload: ERPConnectionUpdate,
     db: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> ERPConnectionResponse:
     """Update an ERP connection."""
     result = await db.execute(select(ERPConnection).where(ERPConnection.id == conn_id))
@@ -151,6 +156,7 @@ async def update_connection(
 async def export_journal_entries(
     payload: ExportRequest,
     db: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> PlainTextResponse:
     """Export journal entries for a period in the connection's format.
 
@@ -245,6 +251,7 @@ async def list_export_logs(
     connection_id: uuid.UUID | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> list[ExportLogResponse]:
     """List export history."""
     stmt = select(ExportLog).order_by(ExportLog.created_at.desc()).limit(limit)

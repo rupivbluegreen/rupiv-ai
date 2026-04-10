@@ -13,7 +13,9 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from rupiv.api.middleware.auth import get_current_api_key
 from rupiv.db import get_db
+from rupiv.models.api_key import ApiKey
 from rupiv.models.quote import Quote, QuoteStatus
 from rupiv.quoting.quote_acceptance import accept_quote, reject_quote
 from rupiv.quoting.quote_builder import build_quote
@@ -107,6 +109,7 @@ async def list_quotes(
     limit: int = 20,
     offset: int = 0,
     session: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> QuoteListResponse:
     """Return a paginated list of quotes, with optional filters."""
     logger.info(
@@ -154,6 +157,7 @@ async def list_quotes(
 async def create_quote(
     payload: QuoteCreate,
     session: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> QuoteResponse:
     """Build a new quote from a plan's pricing rules."""
     logger.info(
@@ -189,6 +193,7 @@ async def create_quote(
 async def get_quote(
     quote_id: uuid.UUID,
     session: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> QuoteResponse:
     """Return a single quote with line items."""
     logger.info("get_quote", quote_id=str(quote_id))
@@ -214,6 +219,7 @@ async def get_quote(
 async def send_quote(
     quote_id: uuid.UUID,
     session: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> QuoteResponse:
     """Mark a draft quote as sent to the customer."""
     logger.info("send_quote", quote_id=str(quote_id))
@@ -251,6 +257,7 @@ async def send_quote(
 async def accept_quote_endpoint(
     quote_id: uuid.UUID,
     session: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> AcceptResponse:
     """Accept a quote, creating a subscription and contract."""
     logger.info("accept_quote", quote_id=str(quote_id))
@@ -279,6 +286,7 @@ async def reject_quote_endpoint(
     quote_id: uuid.UUID,
     payload: QuoteReject,
     session: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> QuoteResponse:
     """Reject a quote with a reason."""
     logger.info("reject_quote", quote_id=str(quote_id), reason=payload.reason)

@@ -164,13 +164,50 @@ async def app(
 
 
 @pytest.fixture
-async def client(app: Any) -> AsyncIterator[AsyncClient]:
-    """Yield an ``httpx.AsyncClient`` wired to the test FastAPI app.
+async def client(
+    app: Any,
+    db_engine: AsyncEngine,
+) -> AsyncIterator[AsyncClient]:
+    """Yield an ``httpx.AsyncClient`` with a valid API key for authenticated requests.
 
-    Uses ``ASGITransport`` so requests never hit the network.
+    Creates a test customer + API key in the DB so endpoints requiring
+    ``get_current_api_key`` accept the request.
     """
+    from rupiv.api.middleware.auth import generate_api_key, hash_api_key
+    from rupiv.models.api_key import ApiKey
+    from rupiv.models.customer import Customer
+
+    session_factory = async_sessionmaker(db_engine, expire_on_commit=False)
+    async with session_factory() as session:
+        # Create a test customer for the API key
+        test_customer = Customer(
+            id=uuid.UUID("00000000-1111-2222-3333-444444444444"),
+            name="Test Auth Customer",
+            email="auth-test@rupiv.ai",
+            external_id="ext-auth-test",
+            country_code="NL",
+            is_business=True,
+            currency="EUR",
+        )
+        session.add(test_customer)
+
+        full_key, key_hash = generate_api_key(prefix="rp_test_")
+        api_key = ApiKey(
+            customer_id=test_customer.id,
+            key_prefix="rp_test_",
+            key_hash=key_hash,
+            name="Test Key",
+            is_active=True,
+        )
+        session.add(api_key)
+        await session.commit()
+
     transport = ASGITransport(app=app)  # type: ignore[arg-type]
-    async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://testserver",
+        headers={"X-API-Key": full_key},
+    ) as ac:
         yield ac
 
 

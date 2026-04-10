@@ -271,7 +271,7 @@ npm run dev
 
 ```bash
 make test
-# 306 tests passing
+# 386 tests passing
 ```
 
 ---
@@ -316,6 +316,17 @@ curl -X POST http://localhost:8000/v1/events \
 | POST | `/v1/a2a/intent` | Agent-to-agent payments |
 | GET | `/v1/credits/{id}/balance` | Credit balance |
 | POST | `/v1/onboarding/signup` | Self-serve signup |
+| GET | `/v1/portal/me` | Customer self-service portal |
+| GET | `/v1/portal/invoices` | Customer invoice viewing |
+| GET | `/v1/portal/usage` | Customer usage dashboard |
+| GET | `/v1/invoices/{id}/pdf` | PDF invoice download |
+| GET | `/v1/alerts` | Revenue leakage alerts |
+| POST | `/v1/alert-rules` | Alert rule management |
+| GET | `/v1/erp/connections` | ERP integration management |
+| POST | `/v1/erp/export` | Journal entry export (CSV/IIF/Xero) |
+| GET | `/v1/transformations` | Data transformation rules |
+| POST | `/v1/transformations/test` | Transformation preview |
+| POST | `/v1/webhook-endpoints` | Outbound webhook management |
 
 Full interactive documentation available at `/docs` when the API is running.
 
@@ -391,7 +402,7 @@ resp, err := client.TrackOutcome(ctx, rupiv.TrackOutcomeParams{
 
 ## Dashboard
 
-The React dashboard provides 12 pages for managing billing operations:
+The React dashboard provides 16 pages for managing billing operations:
 
 | Page | Description |
 |---|---|
@@ -402,11 +413,15 @@ The React dashboard provides 12 pages for managing billing operations:
 | **Pricing Studio** | What-if simulation, forecasting, templates |
 | **Quotes** | Quote pipeline (draft / sent / accepted / rejected) |
 | **Events** | Real-time event stream with WebSocket |
-| **Invoices** | Invoice lifecycle with status filtering |
+| **Invoices** | Invoice lifecycle with status filtering + PDF download |
 | **Revenue** | IFRS 15 schedules, journal entries, waterfall chart |
 | **Policies** | Policy rule builder with outcome validator |
 | **Payment Analytics** | PSP cost comparison, routing recommendations |
+| **Alerts** | Revenue leakage detection, anomaly alerts |
+| **ERP Export** | Journal entry export to QuickBooks, Xero, CSV |
+| **Transformations** | Visual data transformation rules with preview |
 | **Onboarding** | Self-serve signup wizard |
+| **Customer Portal** | Self-service invoices, usage, subscription (separate layout) |
 
 ---
 
@@ -426,12 +441,16 @@ rupiv.ai/
     quoting/          4 quote-to-cash modules
     analytics/        6 business analytics modules
     compliance/       3 audit + GDPR modules
-    models/          15 SQLAlchemy models
-    workers/          7 background workers
+    models/          21 SQLAlchemy models
+    workers/          9 background workers
+    erp/              ERP export formatters
+    invoicing/        PDF invoice generation
+    transformations/  Data transformation engine
+    webhooks/         Outbound webhook dispatch
     sdk/              Python, Node.js, Go SDKs
-  dashboard/         12 pages, 10 components
-  tests/             35 test files, 306 tests
-  migrations/         9 Alembic migrations
+  dashboard/         16 pages, 12 components
+  tests/             43 test files, 386 tests
+  migrations/        16 Alembic migrations
 ```
 
 ---
@@ -480,7 +499,7 @@ See `.env.example` for all configuration options. Key variables:
 
 ```bash
 make dev            # Start all services + hot reload
-make test           # Run 306 tests
+make test           # Run 386 tests
 make lint           # ruff check + format check
 make format         # Auto-format code
 make migrate        # Run database migrations
@@ -497,6 +516,22 @@ GitHub Actions runs on every push:
 2. **Test** -- pytest with coverage
 3. **Frontend** -- TypeScript check + Vite build
 4. **Docker** -- Build image + health check
+
+---
+
+## Security
+
+- **API key authentication** on all endpoints (SHA-256 hashed, `secrets.token_hex` generated)
+- **Clerk JWT verification** with JWKS rotation for portal authentication
+- **HMAC-SHA256 webhook signatures** for both inbound (Mollie/Stripe) and outbound delivery
+- **SSRF protection** on webhook URL registration (blocks private IPs, cloud metadata)
+- **Safe expression evaluator** (AST-based, no `eval()`) for data transformation rules
+- **Rate limiting** per API key (100 req/min default, 1000 for events)
+- **Audit logging** on all write operations + reads on sensitive resources
+- **PII-free structured logs** (no emails, names, or payment data in log output)
+- **Infrastructure hardening**: Redis auth, localhost-only port binding, env-based credentials
+- **GDPR Article 17 + 20**: data export and anonymization endpoints
+- **PCI DSS compliant**: no raw card data stored; PSP tokens only
 
 ---
 

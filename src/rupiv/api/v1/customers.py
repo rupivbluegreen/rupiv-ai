@@ -11,7 +11,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from rupiv.api.middleware.auth import get_current_api_key
 from rupiv.db import get_db
+from rupiv.models.api_key import ApiKey
 from rupiv.models.customer import Customer
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger()
@@ -106,6 +108,7 @@ async def list_customers(
     limit: int = 20,
     offset: int = 0,
     session: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> CustomerListResponse:
     """Return a paginated list of customers."""
     logger.info("list_customers", limit=limit, offset=offset)
@@ -128,6 +131,7 @@ async def list_customers(
 async def get_customer(
     customer_id: uuid.UUID,
     session: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> CustomerResponse:
     """Return a single customer by ID."""
     logger.info("get_customer", customer_id=str(customer_id))
@@ -153,6 +157,7 @@ async def get_customer(
 async def create_customer(
     payload: CustomerCreate,
     session: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> CustomerResponse:
     """Create a new customer record."""
     logger.info("create_customer", name=payload.name, email=payload.email)
@@ -180,6 +185,7 @@ async def update_customer(
     customer_id: uuid.UUID,
     payload: CustomerUpdate,
     session: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> CustomerResponse:
     """Partially update a customer."""
     logger.info("update_customer", customer_id=str(customer_id))

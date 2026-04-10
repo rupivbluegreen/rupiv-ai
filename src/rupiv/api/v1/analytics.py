@@ -10,6 +10,8 @@ from typing import Any
 
 import structlog
 from fastapi import APIRouter, Depends, Query
+from rupiv.api.middleware.auth import get_current_api_key
+from rupiv.models.api_key import ApiKey
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -115,6 +117,7 @@ async def get_mrr(
         default=None, description="Date within the target month (default: today)",
     ),
     db: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> MRRResponse:
     """Return Monthly Recurring Revenue breakdown for the month containing *as_of_date*."""
     target_date = as_of_date or date.today()
@@ -139,6 +142,7 @@ async def get_arr(
         default=None, description="Date within the target month (default: today)",
     ),
     db: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> ARRResponse:
     """Return Annual Recurring Revenue (MRR * 12)."""
     target_date = as_of_date or date.today()
@@ -159,6 +163,7 @@ async def get_churn(
     period_start: date = Query(..., description="Start of the measurement period"),
     period_end: date = Query(..., description="End of the measurement period"),
     db: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> ChurnResponse:
     """Return customer churn rate for the given period."""
     logger.info(
@@ -184,6 +189,7 @@ async def get_payment_costs(
     period_end: date = Query(..., description="End of the measurement period"),
     psp: str | None = Query(default=None, description="Filter by PSP name (omit for all PSPs)"),
     db: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> list[PaymentCostResponse]:
     """Return aggregated payment cost summaries, optionally filtered by PSP."""
     logger.info(
@@ -228,6 +234,7 @@ async def get_payment_cost_recommendations(
     period_start: date = Query(..., description="Start of the analysis period"),
     period_end: date = Query(..., description="End of the analysis period"),
     db: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> RoutingRecommendationResponse:
     """Analyze recent payments and suggest routing changes with estimated savings."""
     logger.info(
@@ -253,6 +260,7 @@ async def get_outcomes(
     customer_id: uuid.UUID | None = Query(default=None, description="Filter by customer"),
     metric: str | None = Query(default=None, description="Filter by metric name"),
     db: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> OutcomeMetricsResponse:
     """Return outcome billing metrics grouped by metric name."""
     logger.info(
@@ -275,6 +283,7 @@ async def get_cohorts(
     start_month: str = Query(..., description="First cohort month (YYYY-MM format)"),
     num_months: int = Query(default=12, ge=1, le=60, description="Number of months to analyze"),
     db: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> CohortResponse:
     """Return customer cohort retention data."""
     logger.info(

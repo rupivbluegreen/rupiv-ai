@@ -8,6 +8,8 @@ from typing import Any
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
+from rupiv.api.middleware.auth import get_current_api_key
+from rupiv.models.api_key import ApiKey
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -111,6 +113,7 @@ class ForecastResponse(BaseModel):
 async def simulate_pricing(
     payload: SimulateRequest,
     db: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> SimulateResponse:
     """Run a pricing simulation scenario against historical data.
 
@@ -143,7 +146,9 @@ async def simulate_pricing(
     status_code=status.HTTP_200_OK,
     summary="List available pricing templates",
 )
-async def list_templates() -> list[TemplateResponse]:
+async def list_templates(
+    _api_key: ApiKey = Depends(get_current_api_key),
+) -> list[TemplateResponse]:
     """Return all pre-built pricing templates."""
     templates = get_templates()
     return [
@@ -165,6 +170,7 @@ async def list_templates() -> list[TemplateResponse]:
 )
 async def run_forecast(
     payload: ForecastRequest,
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> ForecastResponse:
     """Project MRR forward using Monte Carlo simulation.
 

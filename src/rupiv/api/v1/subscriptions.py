@@ -11,7 +11,9 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from rupiv.api.middleware.auth import get_current_api_key
 from rupiv.db import get_db
+from rupiv.models.api_key import ApiKey
 from rupiv.models.subscription import Subscription, SubscriptionStatus
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger()
@@ -61,6 +63,7 @@ async def list_subscriptions(
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> SubscriptionListResponse:
     """Return a paginated list of subscriptions, optionally filtered by customer."""
     logger.info(
@@ -96,6 +99,7 @@ async def list_subscriptions(
 async def get_subscription(
     subscription_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> SubscriptionResponse:
     """Return a single subscription by ID."""
     logger.info("get_subscription", subscription_id=str(subscription_id))
@@ -120,6 +124,7 @@ async def get_subscription(
 async def create_subscription(
     payload: SubscriptionCreate,
     db: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> SubscriptionResponse:
     """Create a new subscription with status=active and a 30-day billing period."""
     logger.info(
@@ -151,6 +156,7 @@ async def create_subscription(
 async def cancel_subscription(
     subscription_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> SubscriptionResponse:
     """Cancel an existing subscription."""
     logger.info("cancel_subscription", subscription_id=str(subscription_id))

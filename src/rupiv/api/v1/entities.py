@@ -12,8 +12,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from rupiv.api.middleware.auth import get_current_api_key
 from rupiv.db import get_db
 from rupiv.entities.entity import create_entity
+from rupiv.models.api_key import ApiKey
 from rupiv.entities.hierarchy import EntityTree
 from rupiv.models.entity import EntityType, LegalEntity
 
@@ -102,6 +104,7 @@ async def list_entities(
     limit: int = 20,
     offset: int = 0,
     session: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> EntityListResponse:
     """Return a paginated list of legal entities, optionally filtered by parent."""
     logger.info(
@@ -140,6 +143,7 @@ async def list_entities(
 async def create_entity_endpoint(
     payload: EntityCreate,
     session: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> EntityResponse:
     """Create a new legal entity."""
     logger.info("create_entity", name=payload.name, entity_type=payload.entity_type.value)
@@ -168,6 +172,7 @@ async def create_entity_endpoint(
 async def get_entity(
     entity_id: uuid.UUID,
     session: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> EntityResponse:
     """Return a single legal entity by ID."""
     logger.info("get_entity", entity_id=str(entity_id))
@@ -189,6 +194,7 @@ async def update_entity(
     entity_id: uuid.UUID,
     payload: EntityUpdate,
     session: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> EntityResponse:
     """Partially update a legal entity."""
     logger.info("update_entity", entity_id=str(entity_id))
@@ -231,6 +237,7 @@ async def update_entity(
 async def get_entity_children(
     entity_id: uuid.UUID,
     session: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> EntityListResponse:
     """Return all direct children of a legal entity."""
     logger.info("get_entity_children", entity_id=str(entity_id))
@@ -267,6 +274,7 @@ async def get_entity_children(
 async def get_entity_ancestors(
     entity_id: uuid.UUID,
     session: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> EntityListResponse:
     """Return the ancestor chain from entity to root (bottom-up)."""
     logger.info("get_entity_ancestors", entity_id=str(entity_id))

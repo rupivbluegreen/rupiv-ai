@@ -60,6 +60,10 @@ class Settings(BaseSettings):
         default=None,
         description="Clerk JWKS endpoint URL for JWT verification (e.g. https://<clerk-domain>/.well-known/jwks.json)",
     )
+    CLERK_AUDIENCE: str | None = Field(
+        default=None,
+        description="Expected JWT audience claim (optional — enables aud verification when set)",
+    )
 
     # --- Application ---
     APP_ENV: str = Field(

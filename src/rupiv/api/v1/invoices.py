@@ -15,7 +15,9 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from rupiv.api.middleware.auth import get_current_api_key
 from rupiv.db import get_db
+from rupiv.models.api_key import ApiKey
 from rupiv.models.invoice import Invoice
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger()
@@ -106,6 +108,7 @@ async def list_invoices(
     limit: int = 20,
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> InvoiceListResponse:
     """Return a paginated list of invoices, optionally filtered."""
     logger.info(
@@ -152,6 +155,7 @@ async def list_invoices(
 async def get_invoice(
     invoice_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> InvoiceResponse:
     """Return a single invoice by ID."""
     logger.info("get_invoice", invoice_id=str(invoice_id))
@@ -175,6 +179,7 @@ async def get_invoice(
 async def get_invoice_pdf(
     invoice_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> FastAPIResponse:
     """Generate and return a PDF for the invoice."""
     from rupiv.invoicing.pdf import generate_invoice_pdf

@@ -5,6 +5,7 @@ from __future__ import annotations
 import secrets
 import uuid
 from datetime import datetime
+from typing import Any
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -41,6 +42,36 @@ class WebhookEndpointResponse(BaseModel):
     created_at: datetime
 
 
+_BLOCKED_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "[::]", "[::1]"}  # noqa: S104
+_BLOCKED_PREFIXES = ("10.", "172.16.", "172.17.", "172.18.", "172.19.", "172.2", "172.3",
+                     "192.168.", "169.254.", "fc00:", "fd", "fe80:")
+
+
+def _validate_webhook_url(url: str) -> str:
+    """Reject URLs targeting internal/private networks (SSRF protection)."""
+    from urllib.parse import urlparse
+
+    parsed = urlparse(url)
+    if parsed.scheme not in ("https", "http"):
+        msg = "Webhook URL must use http or https"
+        raise ValueError(msg)
+
+    hostname = (parsed.hostname or "").lower()
+    if hostname in _BLOCKED_HOSTS:
+        msg = "Webhook URL cannot target localhost or loopback"
+        raise ValueError(msg)
+    if any(hostname.startswith(p) for p in _BLOCKED_PREFIXES):
+        msg = "Webhook URL cannot target private/internal networks"
+        raise ValueError(msg)
+
+    # Block cloud metadata endpoints
+    if "169.254.169.254" in url or "metadata.google" in url:
+        msg = "Webhook URL cannot target cloud metadata services"
+        raise ValueError(msg)
+
+    return url
+
+
 class WebhookEndpointCreate(BaseModel):
     """Request body for creating a webhook endpoint."""
 
@@ -49,6 +80,13 @@ class WebhookEndpointCreate(BaseModel):
         min_length=1,
         description="Event types to subscribe to, e.g. ['invoice.paid', 'payment.failed']",
     )
+
+    @classmethod
+    def model_validate(cls, *args: Any, **kwargs: Any) -> "WebhookEndpointCreate":
+        """Validate and check URL safety."""
+        instance = super().model_validate(*args, **kwargs)
+        _validate_webhook_url(instance.url)
+        return instance
 
 
 class WebhookDeliveryResponse(BaseModel):
@@ -80,6 +118,11 @@ async def create_webhook_endpoint(
     db: AsyncSession = Depends(get_db),
 ) -> WebhookEndpointResponse:
     """Register a new webhook endpoint for the authenticated customer."""
+    try:
+        _validate_webhook_url(payload.url)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
     endpoint = WebhookEndpoint(
         customer_id=customer.id,
         url=payload.url,

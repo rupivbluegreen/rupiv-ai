@@ -43,16 +43,28 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
-def _authenticate_api_key(api_key: str | None) -> bool:
-    """Stub authentication for MVP.
+async def _authenticate_api_key(api_key: str | None) -> bool:
+    """Validate an API key against the database.
 
-    In production this would validate against the database or Clerk.
-    For now, accept any non-empty key or allow ``None`` (open access).
+    Requires a valid, active API key. Returns False if the key is
+    missing, empty, or not found in the database.
     """
-    # TODO: Implement real API key validation against the database.
-    if api_key is not None and len(api_key) == 0:
+    if not api_key:
         return False
-    return True
+
+    from rupiv.api.middleware.auth import hash_api_key
+    from rupiv.db import _get_session_factory
+    from rupiv.models.api_key import ApiKey
+
+    key_hash = hash_api_key(api_key)
+    session_factory = _get_session_factory()
+    async with session_factory() as session:
+        from sqlalchemy import select
+
+        result = await session.execute(
+            select(ApiKey).where(ApiKey.key_hash == key_hash, ApiKey.is_active.is_(True)),
+        )
+        return result.scalar_one_or_none() is not None
 
 
 def _matches_filters(
@@ -82,9 +94,9 @@ async def stream_events(
         type: Optional event type filter (e.g. ``"usage"``, ``"outcome"``).
         metric: Optional metric filter (e.g. ``"ticket_resolved"``).
     """
-    # --- Authentication (stub) ---
-    if not _authenticate_api_key(api_key):
-        await websocket.close(code=4001, reason="Invalid API key")
+    # --- Authentication ---
+    if not await _authenticate_api_key(api_key):
+        await websocket.close(code=4001, reason="Invalid or missing API key")
         return
 
     await manager.connect(websocket)

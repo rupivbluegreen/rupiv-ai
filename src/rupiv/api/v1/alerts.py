@@ -12,8 +12,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from rupiv.api.middleware.auth import get_current_api_key
 from rupiv.db import get_db
 from rupiv.models.alert import Alert, AlertRule
+from rupiv.models.api_key import ApiKey
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger()
 
@@ -104,6 +106,7 @@ async def list_alerts(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> AlertListResponse:
     """Return a paginated list of alerts."""
     stmt = select(Alert)
@@ -137,6 +140,7 @@ async def update_alert(
     alert_id: uuid.UUID,
     payload: AlertUpdate,
     db: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> AlertResponse:
     """Acknowledge or resolve an alert."""
     result = await db.execute(select(Alert).where(Alert.id == alert_id))
@@ -163,6 +167,7 @@ async def update_alert(
 @router.get("/alert-rules", response_model=list[AlertRuleResponse], summary="List alert rules")
 async def list_alert_rules(
     db: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> list[AlertRuleResponse]:
     """Return all alert rules."""
     result = await db.execute(select(AlertRule).order_by(AlertRule.created_at.desc()))
@@ -179,6 +184,7 @@ async def list_alert_rules(
 async def create_alert_rule(
     payload: AlertRuleCreate,
     db: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> AlertRuleResponse:
     """Create a new alert rule."""
     rule = AlertRule(
@@ -203,6 +209,7 @@ async def update_alert_rule(
     rule_id: uuid.UUID,
     payload: AlertRuleUpdate,
     db: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> AlertRuleResponse:
     """Update an existing alert rule."""
     result = await db.execute(select(AlertRule).where(AlertRule.id == rule_id))

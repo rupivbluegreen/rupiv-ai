@@ -11,12 +11,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from rupiv.api.middleware.auth import get_current_api_key
 from rupiv.billing.credits import (
     get_or_create_balance,
     get_transactions,
     purchase_credits,
 )
 from rupiv.db import get_db
+from rupiv.models.api_key import ApiKey
 from rupiv.models.credit import TransactionType
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger()
@@ -89,6 +91,7 @@ class AdjustCreditsRequest(BaseModel):
 async def get_credit_balance(
     customer_id: uuid.UUID,
     session: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> CreditBalanceResponse:
     """Return the current credit balance for a customer."""
     logger.info("credits.get_balance", customer_id=str(customer_id))
@@ -111,6 +114,7 @@ async def list_credit_transactions(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     session: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> CreditTransactionListResponse:
     """Return paginated credit transactions for a customer, newest first."""
     logger.info(
@@ -140,6 +144,7 @@ async def purchase_credits_endpoint(
     customer_id: uuid.UUID,
     payload: PurchaseCreditsRequest,
     session: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> CreditTransactionResponse:
     """Purchase credits for a customer. Creates a credit transaction."""
     logger.info(
@@ -168,6 +173,7 @@ async def adjust_credits_endpoint(
     customer_id: uuid.UUID,
     payload: AdjustCreditsRequest,
     session: AsyncSession = Depends(get_db),
+    _api_key: ApiKey = Depends(get_current_api_key),
 ) -> CreditTransactionResponse:
     """Manually adjust a customer's credit balance (admin only).
 
